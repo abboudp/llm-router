@@ -38,9 +38,11 @@ function pickPrompt() {
 
 export default function () {
   const item = pickPrompt();
+  // tail prompts carry a unique request context to mimic real traffic variety
+  const prompt = item.weight <= 3 ? `${item.prompt} [ctx ${__VU}-${__ITER}]` : item.prompt;
   const res = http.post(
     "http://localhost:8000/v1/generate",
-    JSON.stringify({ prompt: item.prompt, max_tokens: 64 }),
+    JSON.stringify({ prompt: prompt, max_tokens: 64 }),
     { headers: { "Content-Type": "application/json" } }
   );
   let body = {};
@@ -50,9 +52,9 @@ export default function () {
     body = {};
   }
   const sig = (body && body.signature) || "";
-  const firstSeen = !(item.prompt in seenSignatures);
-  const stable = firstSeen || seenSignatures[item.prompt] === sig;
-  if (firstSeen) seenSignatures[item.prompt] = sig;
+  const firstSeen = !(prompt in seenSignatures);
+  const stable = firstSeen || seenSignatures[prompt] === sig;
+  if (firstSeen) seenSignatures[prompt] = sig;
 
   check(res, {
     "status 200": (r) => r.status === 200,
