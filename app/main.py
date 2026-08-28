@@ -2,8 +2,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 
+from .schemas import GenerateRequest
 from .upstream import UpstreamPool
 
 
@@ -15,11 +15,6 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
-
-
-class GenerateRequest(BaseModel):
-    prompt: str
-    max_tokens: int = 64
 
 
 @app.post("/v1/generate")
