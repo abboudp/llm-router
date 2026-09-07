@@ -8,7 +8,12 @@ export function ErrorToast() {
     if (!state.error) return;
     const timer = window.setTimeout(() => actions.dismissError(), 6000);
     return () => window.clearTimeout(timer);
-  }, [state.error, actions]);
+    // Deliberately omit `actions` here: AppProvider rebuilds it on every
+    // render, and including it would restart this timer on any unrelated
+    // dispatch while the toast is showing. The dispatch identity behind
+    // `actions.dismissError` is stable, so calling it from this closure
+    // after the dependency-triggered re-render is safe.
+  }, [state.error]);
 
   if (!state.error) return null;
 
