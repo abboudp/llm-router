@@ -1,4 +1,4 @@
-.PHONY: services dev bench ui
+.PHONY: services dev bench ui e2e
 
 services:
 	docker compose up -d
@@ -11,3 +11,6 @@ bench:
 
 ui:
 	cd frontend && npm ci && npm run build
+
+e2e:
+	bash scripts/run_e2e.sh
