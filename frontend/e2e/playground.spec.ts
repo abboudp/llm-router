@@ -33,7 +33,7 @@ test("send message renders both turns with latency chip", async ({ page }) => {
   await expect(page.getByTestId("message-user")).toContainText("request queue");
   await expect(page.getByTestId("pending-bubble")).toBeVisible();
   const assistant = page.getByTestId("message-assistant").first();
-  await expect(assistant).toBeVisible();          // 20s expect timeout applies
+  await expect(assistant).toBeVisible();
   await expect(assistant).not.toHaveText("");
   await expect(assistant.getByTestId("latency-chip")).toHaveText(/\d+(\.\d+)?\s(ms|s)/);
 });
