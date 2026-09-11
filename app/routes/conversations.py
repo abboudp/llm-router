@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 
 from ..export import render_markdown, slugify
-from ..schemas import ConversationCreate, ConversationOut, ConversationRename, MessageOut
+from ..schemas import ConversationCreate, ConversationOut, ConversationUpdate, MessageOut
 
 router = APIRouter(prefix="/v1/conversations", tags=["conversations"])
 
@@ -28,8 +28,10 @@ async def create_conversation(body: ConversationCreate, request: Request):
 
 
 @router.patch("/{conversation_id}", response_model=ConversationOut)
-async def rename_conversation(conversation_id: str, body: ConversationRename, request: Request):
-    conversation = request.app.state.store.rename_conversation(conversation_id, body.title)
+async def update_conversation(conversation_id: str, body: ConversationUpdate, request: Request):
+    conversation = request.app.state.store.update_conversation(
+        conversation_id, title=body.title, pinned=body.pinned
+    )
     if conversation is None:
         raise HTTPException(status_code=404, detail="conversation not found")
     return conversation

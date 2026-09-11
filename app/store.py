@@ -9,7 +9,8 @@ CREATE TABLE IF NOT EXISTS conversations (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
     created_at REAL NOT NULL,
-    updated_at REAL NOT NULL
+    updated_at REAL NOT NULL,
+    pinned INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS messages (
     id TEXT PRIMARY KEY,
@@ -26,6 +27,12 @@ CREATE INDEX IF NOT EXISTS idx_messages_conversation
 
 def _row_to_dict(row: sqlite3.Row, drop: tuple[str, ...] = ()) -> dict:
     return {k: row[k] for k in row.keys() if k not in drop}
+
+
+def _conversation_dict(row: sqlite3.Row) -> dict:
+    conversation = _row_to_dict(row)
+    conversation["pinned"] = bool(conversation["pinned"])
+    return conversation
 
 
 class Store:
@@ -49,15 +56,20 @@ class Store:
             "title": title,
             "created_at": now,
             "updated_at": now,
+            "pinned": False,
         }
         self._conn.execute(
-            "INSERT INTO conversations (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
+            "INSERT INTO conversations (id, title, created_at, updated_at, pinned)"
+            " VALUES (?, ?, ?, ?, 0)",
             (conversation["id"], title, now, now),
         )
         self._conn.commit()
         return conversation
 
     def list_conversations(self, q: str | None = None) -> list[dict]:
+        # Pinned conversations always float to the top; within each group,
+        # most-recently-updated first.
+        order_by = " ORDER BY pinned DESC, updated_at DESC"
         if q:
             # Escape SQL LIKE wildcards in the query itself, so searching for
             # e.g. a title containing a literal "%" or "_" does a plain
@@ -65,25 +77,45 @@ class Store:
             escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             rows = self._conn.execute(
                 "SELECT * FROM conversations WHERE LOWER(title) LIKE LOWER(?) ESCAPE '\\'"
-                " ORDER BY updated_at DESC",
+                + order_by,
                 (f"%{escaped}%",),
             ).fetchall()
         else:
-            rows = self._conn.execute(
-                "SELECT * FROM conversations ORDER BY updated_at DESC"
-            ).fetchall()
-        return [_row_to_dict(r) for r in rows]
+            rows = self._conn.execute("SELECT * FROM conversations" + order_by).fetchall()
+        return [_conversation_dict(r) for r in rows]
 
     def get_conversation(self, conversation_id: str) -> dict | None:
         row = self._conn.execute(
             "SELECT * FROM conversations WHERE id = ?", (conversation_id,)
         ).fetchone()
-        return _row_to_dict(row) if row else None
+        return _conversation_dict(row) if row else None
 
-    def rename_conversation(self, conversation_id: str, title: str) -> dict | None:
+    def update_conversation(self, conversation_id: str, title: str | None = None,
+                            pinned: bool | None = None) -> dict | None:
+        """Partially update a conversation's title and/or pinned flag.
+
+        Renaming bumps `updated_at` (as before). Pinning/unpinning does not:
+        it's a user preference rather than conversation activity, so toggling
+        it shouldn't reorder a conversation within its pinned/unpinned group
+        on its own.
+        """
+        if title is None and pinned is None:
+            return self.get_conversation(conversation_id)
+
+        fields: list[str] = []
+        params: list = []
+        if title is not None:
+            fields.append("title = ?")
+            params.append(title)
+            fields.append("updated_at = ?")
+            params.append(time.time())
+        if pinned is not None:
+            fields.append("pinned = ?")
+            params.append(1 if pinned else 0)
+        params.append(conversation_id)
+
         cur = self._conn.execute(
-            "UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?",
-            (title, time.time(), conversation_id),
+            f"UPDATE conversations SET {', '.join(fields)} WHERE id = ?", params
         )
         self._conn.commit()
         if cur.rowcount == 0:

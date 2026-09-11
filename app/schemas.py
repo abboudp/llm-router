@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 
 class GenerateRequest(BaseModel):
@@ -17,8 +17,17 @@ class ConversationCreate(BaseModel):
     title: str | None = None
 
 
-class ConversationRename(BaseModel):
-    title: str
+class ConversationUpdate(BaseModel):
+    """PATCH body for a conversation: rename it, pin/unpin it, or both."""
+
+    title: str | None = None
+    pinned: bool | None = None
+
+    @model_validator(mode="after")
+    def _require_at_least_one_field(self) -> "ConversationUpdate":
+        if self.title is None and self.pinned is None:
+            raise ValueError("at least one of title or pinned must be provided")
+        return self
 
 
 # -- response models ---------------------------------------------------------
@@ -32,6 +41,7 @@ class ConversationOut(BaseModel):
     title: str
     created_at: float
     updated_at: float
+    pinned: bool
 
 
 class MessageOut(BaseModel):

@@ -6,7 +6,7 @@ from app.schemas import (
     ChatTurnResponse,
     ConversationCreate,
     ConversationOut,
-    ConversationRename,
+    ConversationUpdate,
     GenerateRequest,
     InfoResponse,
     MessageOut,
@@ -28,14 +28,31 @@ def test_chat_request_defaults_and_required():
 
 def test_conversation_schemas():
     assert ConversationCreate().title is None
-    assert ConversationRename(title="t").title == "t"
+    assert ConversationUpdate(title="t").title == "t"
+
+
+def test_conversation_update_requires_at_least_one_field():
     with pytest.raises(ValidationError):
-        ConversationRename()
+        ConversationUpdate()
+
+
+def test_conversation_update_accepts_pinned_alone():
+    update = ConversationUpdate(pinned=True)
+    assert update.title is None
+    assert update.pinned is True
+
+
+def test_conversation_update_accepts_title_and_pinned_together():
+    update = ConversationUpdate(title="t", pinned=False)
+    assert update.title == "t"
+    assert update.pinned is False
 
 
 def test_conversation_out_requires_all_fields():
-    out = ConversationOut(id="c1", title="T", created_at=1.0, updated_at=2.0)
-    assert out.model_dump() == {"id": "c1", "title": "T", "created_at": 1.0, "updated_at": 2.0}
+    out = ConversationOut(id="c1", title="T", created_at=1.0, updated_at=2.0, pinned=False)
+    assert out.model_dump() == {
+        "id": "c1", "title": "T", "created_at": 1.0, "updated_at": 2.0, "pinned": False,
+    }
     with pytest.raises(ValidationError):
         ConversationOut(id="c1", title="T", created_at=1.0)
 
