@@ -20,3 +20,10 @@ export interface ChatResponse {
   model: string | null;
   usage: { prompt_tokens: number; completion_tokens: number } | null;
 }
+
+export interface Info {
+  name: string;
+  version: string;
+  models: string[];
+  uptime_s: number;
+}

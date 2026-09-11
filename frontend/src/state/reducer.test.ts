@@ -32,4 +32,28 @@ describe("reducer", () => {
     expect(s.pending).toBe(false);
     expect(s.error).toBe("conversation not found");
   });
+
+  it("tracks the search query and the filtered conversation list", () => {
+    let s = reducer(initialState, { type: "search_changed", query: "kube" });
+    expect(s.searchQuery).toBe("kube");
+    s = reducer(s, {
+      type: "conversations_loaded",
+      conversations: [{ id: "c1", title: "Kubernetes plan", created_at: 0, updated_at: 0 }],
+    });
+    expect(s.conversations).toHaveLength(1);
+  });
+
+  it("opens and closes the shortcuts modal", () => {
+    let s = reducer(initialState, { type: "shortcuts_opened" });
+    expect(s.shortcutsOpen).toBe(true);
+    s = reducer(s, { type: "shortcuts_closed" });
+    expect(s.shortcutsOpen).toBe(false);
+  });
+
+  it("tracks whether a conversation creation is in flight", () => {
+    let s = reducer(initialState, { type: "conversation_create_started" });
+    expect(s.creatingConversation).toBe(true);
+    s = reducer(s, { type: "conversation_create_finished" });
+    expect(s.creatingConversation).toBe(false);
+  });
 });

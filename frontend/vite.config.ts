@@ -8,6 +8,8 @@ export default defineConfig({
   },
   build: { outDir: "dist" },
   test: {
+    environment: "jsdom",
     exclude: ["node_modules/**", "dist/**", "e2e/**"],
+    setupFiles: ["./src/test-setup.ts"],
   },
 });

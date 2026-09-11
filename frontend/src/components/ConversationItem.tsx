@@ -1,4 +1,5 @@
 import type { Conversation } from "../api/types";
+import { relativeTime } from "../lib/time";
 import { useApp } from "../state/store";
 
 export function ConversationItem({ conversation }: { conversation: Conversation }) {
@@ -18,14 +19,35 @@ export function ConversationItem({ conversation }: { conversation: Conversation 
     void actions.remove(conversation.id);
   };
 
+  const exportConversation = (event: React.MouseEvent) => {
+    event.stopPropagation();
+    const link = document.createElement("a");
+    link.href = `/v1/conversations/${conversation.id}/export`;
+    link.download = "";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  };
+
   return (
     <div
       className={`conversation-item${selected ? " selected" : ""}`}
       data-testid="conversation-item"
       onClick={() => void actions.select(conversation.id)}
     >
-      <span className="conversation-title">{conversation.title}</span>
+      <span className="conversation-main">
+        <span className="conversation-title">{conversation.title}</span>
+        <span className="conversation-time">{relativeTime(conversation.updated_at)}</span>
+      </span>
       <span className="conversation-actions">
+        <button
+          className="conversation-action"
+          data-testid="export-conversation"
+          onClick={exportConversation}
+          aria-label="Export conversation"
+        >
+          ⭳
+        </button>
         <button
           className="conversation-action"
           data-testid="rename-conversation"

@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useReducer } from "react";
+import { createContext, useCallback, useContext, useEffect, useReducer, useRef } from "react";
 import { api } from "../api/client";
 import type { Conversation, Message } from "../api/types";
 
@@ -14,6 +14,9 @@ export interface AppState {
   pending: boolean;
   settings: Settings;
   error: string | null;
+  searchQuery: string;
+  shortcutsOpen: boolean;
+  creatingConversation: boolean;
 }
 
 export const initialState: AppState = {
@@ -23,6 +26,9 @@ export const initialState: AppState = {
   pending: false,
   settings: { maxTokens: 64, model: "default" },
   error: null,
+  searchQuery: "",
+  shortcutsOpen: false,
+  creatingConversation: false,
 };
 
 export type Action =
@@ -33,7 +39,12 @@ export type Action =
   | { type: "send_failed"; error: string }
   | { type: "settings_changed"; settings: Partial<Settings> }
   | { type: "error"; error: string }
-  | { type: "error_dismissed" };
+  | { type: "error_dismissed" }
+  | { type: "search_changed"; query: string }
+  | { type: "shortcuts_opened" }
+  | { type: "shortcuts_closed" }
+  | { type: "conversation_create_started" }
+  | { type: "conversation_create_finished" };
 
 export function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
@@ -62,6 +73,16 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, error: action.error };
     case "error_dismissed":
       return { ...state, error: null };
+    case "search_changed":
+      return { ...state, searchQuery: action.query };
+    case "shortcuts_opened":
+      return { ...state, shortcutsOpen: true };
+    case "shortcuts_closed":
+      return { ...state, shortcutsOpen: false };
+    case "conversation_create_started":
+      return { ...state, creatingConversation: true };
+    case "conversation_create_finished":
+      return { ...state, creatingConversation: false };
     default:
       return state;
   }
@@ -69,9 +90,26 @@ export function reducer(state: AppState, action: Action): AppState {
 
 const AppContext = createContext<ReturnType<typeof buildValue> | null>(null);
 
-function buildValue(state: AppState, dispatch: React.Dispatch<Action>) {
-  const refresh = async () => {
-    dispatch({ type: "conversations_loaded", conversations: await api.listConversations() });
+/**
+ * Several actions (create, rename, delete, send, search) all end with a
+ * conversation-list refresh, and nothing stops two of those from being in
+ * flight at once — e.g. renaming one conversation right after creating
+ * another. Without a guard, whichever GET happens to resolve last "wins"
+ * and overwrites state, even if it was the one that fired first and is now
+ * stale. `refreshSeqRef` is a simple sequence number: each refresh grabs
+ * the next value, and only applies its result if it is still the most
+ * recent refresh in flight by the time its response comes back.
+ */
+function buildValue(
+  state: AppState,
+  dispatch: React.Dispatch<Action>,
+  refreshSeqRef: { current: number },
+) {
+  const refresh = async (query = state.searchQuery) => {
+    const requestId = ++refreshSeqRef.current;
+    const conversations = await api.listConversations(query || undefined);
+    if (requestId !== refreshSeqRef.current) return; // a newer refresh has since started
+    dispatch({ type: "conversations_loaded", conversations });
   };
   const select = async (id: string | null) => {
     dispatch({ type: "selected", id, messages: id ? await api.listMessages(id) : [] });
@@ -80,9 +118,17 @@ function buildValue(state: AppState, dispatch: React.Dispatch<Action>) {
     refresh,
     select,
     newConversation: async () => {
-      const conversation = await api.createConversation();
-      await refresh();
-      await select(conversation.id);
+      // Guards against a burst of clicks or repeated Cmd/Ctrl+K presses
+      // firing several concurrent creates before the first one lands.
+      if (state.creatingConversation) return;
+      dispatch({ type: "conversation_create_started" });
+      try {
+        const conversation = await api.createConversation();
+        await refresh();
+        await select(conversation.id);
+      } finally {
+        dispatch({ type: "conversation_create_finished" });
+      }
     },
     rename: async (id: string, title: string) => {
       await api.renameConversation(id, title);
@@ -112,13 +158,20 @@ function buildValue(state: AppState, dispatch: React.Dispatch<Action>) {
     setSettings: (settings: Partial<Settings>) =>
       dispatch({ type: "settings_changed", settings }),
     dismissError: () => dispatch({ type: "error_dismissed" }),
+    search: async (query: string) => {
+      dispatch({ type: "search_changed", query });
+      await refresh(query);
+    },
+    openShortcuts: () => dispatch({ type: "shortcuts_opened" }),
+    closeShortcuts: () => dispatch({ type: "shortcuts_closed" }),
   };
   return { state, actions };
 }
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
-  const value = buildValue(state, dispatch);
+  const refreshSeqRef = useRef(0);
+  const value = buildValue(state, dispatch, refreshSeqRef);
   const refreshOnce = useCallback(value.actions.refresh, []);
   useEffect(() => {
     void refreshOnce();
