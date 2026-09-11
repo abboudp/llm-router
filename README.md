@@ -31,22 +31,24 @@ make e2e     # run the Playwright end-to-end UI tests
 
 ## API
 
-| Method | Path                              | Description                              |
-|--------|-----------------------------------|-------------------------------------------|
-| POST   | `/v1/generate`                    | Forward a single prompt to the backend fleet |
-| POST   | `/v1/chat`                        | Send a message to a conversation and get a reply |
-| GET    | `/v1/conversations`               | List conversations |
-| POST   | `/v1/conversations`               | Create a conversation |
-| PATCH  | `/v1/conversations/{id}`          | Rename a conversation |
-| DELETE | `/v1/conversations/{id}`          | Delete a conversation |
-| GET    | `/v1/conversations/{id}/messages` | List messages in a conversation |
+| Method | Path                                       | Description                              |
+|--------|---------------------------------------------|-------------------------------------------|
+| POST   | `/v1/generate`                               | Forward a single prompt to the backend fleet |
+| POST   | `/v1/chat`                                   | Send a message to a conversation and get a reply |
+| GET    | `/v1/info`                                   | App name, version, and available models |
+| GET    | `/v1/conversations?q=`                       | List conversations, optionally filtered by title |
+| POST   | `/v1/conversations`                          | Create a conversation |
+| PATCH  | `/v1/conversations/{id}`                     | Rename a conversation |
+| DELETE | `/v1/conversations/{id}`                     | Delete a conversation |
+| GET    | `/v1/conversations/{id}/messages?limit=&before=` | List messages in a conversation, with optional pagination |
+| GET    | `/v1/conversations/{id}/export`              | Download the conversation as a markdown transcript |
 
 ## Layout
 
-- `app/` — FastAPI gateway: generate/chat routes, conversation store, request logging middleware
+- `app/` — FastAPI gateway: generate/chat/info routes, conversation store, markdown export, request logging middleware
 - `bench/` — k6 load test script and weighted workload
 - `docker-compose.yml` — backend fleet service definitions
-- `frontend/` — React + TypeScript playground UI (Vite, Vitest, Playwright)
+- `frontend/` — React + TypeScript playground UI (Vite, Vitest, Testing Library, Playwright)
 - `Makefile` — `make services` / `make ui` / `make dev` / `make bench` / `make e2e`
 - `pyproject.toml` — Python project and dependencies (uv)
 - `scripts/` — helper scripts (e2e stack bootstrap)
