@@ -6,9 +6,20 @@ import { LatencyChip } from "./LatencyChip";
 
 const COPIED_LABEL_MS = 1500;
 
-export function MessageBubble({ message }: { message: Message }) {
+export function MessageBubble({
+  message,
+  isFinalReply = false,
+  retryDisabled = false,
+  onRetry,
+}: {
+  message: Message;
+  isFinalReply?: boolean;
+  retryDisabled?: boolean;
+  onRetry?: () => void;
+}) {
   const isUser = message.role === "user";
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [usageOpen, setUsageOpen] = useState(false);
 
   const copy = async () => {
     const ok = await copyToClipboard(message.content);
@@ -17,6 +28,7 @@ export function MessageBubble({ message }: { message: Message }) {
   };
 
   const copyLabel = copyState === "copied" ? "Copied" : copyState === "failed" ? "Failed" : "Copy";
+  const canRetry = !isUser && isFinalReply && Boolean(onRetry);
 
   return (
     <div
@@ -36,6 +48,27 @@ export function MessageBubble({ message }: { message: Message }) {
       {!isUser && (
         <div className="message-actions">
           {message.latency_ms != null && <LatencyChip latencyMs={message.latency_ms} />}
+          {message.usage && (
+            // A controlled disclosure rather than native <details>: the
+            // body text only enters the DOM once expanded, so a collapsed
+            // usage detail doesn't add to the bubble's visible text.
+            <span className="usage-detail" data-testid="usage-detail">
+              <button
+                type="button"
+                className="usage-detail-toggle"
+                onClick={() => setUsageOpen((open) => !open)}
+                aria-expanded={usageOpen}
+              >
+                Usage
+              </button>
+              {usageOpen && (
+                <span className="usage-detail-body">
+                  {message.usage.prompt_tokens} prompt + {message.usage.completion_tokens}{" "}
+                  completion tokens
+                </span>
+              )}
+            </span>
+          )}
           <button
             className="copy-message"
             data-testid="copy-message"
@@ -44,6 +77,17 @@ export function MessageBubble({ message }: { message: Message }) {
           >
             {copyLabel}
           </button>
+          {canRetry && (
+            <button
+              className="retry-message"
+              data-testid="retry-message"
+              onClick={onRetry}
+              disabled={retryDisabled}
+              aria-label="Retry this message"
+            >
+              Retry
+            </button>
+          )}
         </div>
       )}
     </div>

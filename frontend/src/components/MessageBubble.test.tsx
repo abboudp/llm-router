@@ -70,4 +70,62 @@ describe("MessageBubble", () => {
 
     expect(await screen.findByText("Failed")).toBeInTheDocument();
   });
+
+  it("shows the retry button only on the last assistant message", () => {
+    const onRetry = vi.fn();
+    render(<MessageBubble message={message({})} isFinalReply onRetry={onRetry} />);
+    expect(screen.getByTestId("retry-message")).toBeInTheDocument();
+  });
+
+  it("hides the retry button when not the last message", () => {
+    const onRetry = vi.fn();
+    render(<MessageBubble message={message({})} isFinalReply={false} onRetry={onRetry} />);
+    expect(screen.queryByTestId("retry-message")).not.toBeInTheDocument();
+  });
+
+  it("hides the retry button for user messages even if marked last", () => {
+    const onRetry = vi.fn();
+    render(<MessageBubble message={message({ role: "user" })} isFinalReply onRetry={onRetry} />);
+    expect(screen.queryByTestId("retry-message")).not.toBeInTheDocument();
+  });
+
+  it("calls onRetry when the retry button is clicked", () => {
+    const onRetry = vi.fn();
+    render(<MessageBubble message={message({})} isFinalReply onRetry={onRetry} />);
+    fireEvent.click(screen.getByTestId("retry-message"));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables the retry button while a send is already pending", () => {
+    render(<MessageBubble message={message({})} isFinalReply onRetry={vi.fn()} retryDisabled />);
+    expect(screen.getByTestId("retry-message")).toBeDisabled();
+  });
+
+  it("shows a usage detail toggle when usage is attached, collapsed by default", () => {
+    render(
+      <MessageBubble
+        message={message({ usage: { prompt_tokens: 12, completion_tokens: 4 } })}
+      />,
+    );
+    const detail = screen.getByTestId("usage-detail");
+    expect(detail).toBeInTheDocument();
+    expect(detail).not.toHaveTextContent("12 prompt");
+  });
+
+  it("reveals the token counts once the usage detail is expanded", () => {
+    render(
+      <MessageBubble
+        message={message({ usage: { prompt_tokens: 12, completion_tokens: 4 } })}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Usage" }));
+    const detail = screen.getByTestId("usage-detail");
+    expect(detail).toHaveTextContent("12 prompt");
+    expect(detail).toHaveTextContent("4 completion");
+  });
+
+  it("omits the usage detail when no usage is attached (e.g. reloaded history)", () => {
+    render(<MessageBubble message={message({})} />);
+    expect(screen.queryByTestId("usage-detail")).not.toBeInTheDocument();
+  });
 });

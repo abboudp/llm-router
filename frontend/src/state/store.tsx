@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useReducer, useRef } from "react";
 import { api } from "../api/client";
-import type { Conversation, Message } from "../api/types";
+import type { Conversation, Message, Usage } from "../api/types";
 
 export interface Settings {
   maxTokens: number;
@@ -35,7 +35,7 @@ export type Action =
   | { type: "conversations_loaded"; conversations: Conversation[] }
   | { type: "selected"; id: string | null; messages: Message[] }
   | { type: "send_started"; userText: string }
-  | { type: "send_succeeded"; message: Message }
+  | { type: "send_succeeded"; message: Message; usage: Usage | null }
   | { type: "send_failed"; error: string }
   | { type: "settings_changed"; settings: Partial<Settings> }
   | { type: "error"; error: string }
@@ -44,7 +44,21 @@ export type Action =
   | { type: "shortcuts_opened" }
   | { type: "shortcuts_closed" }
   | { type: "conversation_create_started" }
-  | { type: "conversation_create_finished" };
+  | { type: "conversation_create_finished" }
+  | { type: "retry_requested" };
+
+/**
+ * The text to re-send when retrying, or null if the conversation isn't in a
+ * retryable state — i.e. the last message isn't an assistant reply directly
+ * preceded by the user turn that produced it.
+ */
+export function lastRetryableUserText(messages: Message[]): string | null {
+  const last = messages[messages.length - 1];
+  const precedingUser = messages[messages.length - 2];
+  if (!last || last.role !== "assistant") return null;
+  if (!precedingUser || precedingUser.role !== "user") return null;
+  return precedingUser.content;
+}
 
 export function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
@@ -64,7 +78,11 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, pending: true, messages: [...state.messages, optimistic] };
     }
     case "send_succeeded":
-      return { ...state, pending: false, messages: [...state.messages, action.message] };
+      return {
+        ...state,
+        pending: false,
+        messages: [...state.messages, { ...action.message, usage: action.usage }],
+      };
     case "send_failed":
       return { ...state, pending: false, error: action.error };
     case "settings_changed":
@@ -83,6 +101,10 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, creatingConversation: true };
     case "conversation_create_finished":
       return { ...state, creatingConversation: false };
+    case "retry_requested":
+      // A stale error from the failed attempt shouldn't linger once the
+      // user has asked to try again.
+      return { ...state, error: null };
     default:
       return state;
   }
@@ -149,11 +171,21 @@ function buildValue(
           max_tokens: state.settings.maxTokens,
           ...(state.settings.model !== "default" ? { model: state.settings.model } : {}),
         });
-        dispatch({ type: "send_succeeded", message: resp.message });
+        dispatch({ type: "send_succeeded", message: resp.message, usage: resp.usage });
         await refresh(); // titles/order may have changed
       } catch (err) {
         dispatch({ type: "send_failed", error: (err as Error).message });
       }
+    },
+    retryLast: async () => {
+      const text = lastRetryableUserText(state.messages);
+      if (!text) return;
+      dispatch({ type: "retry_requested" });
+      await actions.send(text);
+    },
+    setPinned: async (id: string, pinned: boolean) => {
+      await api.setPinned(id, pinned);
+      await refresh();
     },
     setSettings: (settings: Partial<Settings>) =>
       dispatch({ type: "settings_changed", settings }),

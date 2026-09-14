@@ -1,3 +1,10 @@
+/*
+ * Theme: every color in this file is a variable, defined once here for the
+ * light theme (the default — no `data-theme` attribute needed) and
+ * re-defined under `[data-theme="dark"]` below. `lib/theme.ts` sets that
+ * attribute on `<html>` from a toggle in the sidebar footer, persisted in
+ * localStorage.
+ */
 :root {
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
     sans-serif;
@@ -18,9 +25,50 @@
 
   --accent: #10a37f;
   --accent-hover: #0d8c6d;
+  --on-accent: #ffffff;
   --danger: #d64545;
   --error-bg: #2a1518;
   --error-border: #7a2b30;
+  --error-text: #f5d5d7;
+
+  --code-bg: #1e1e1e;
+  --code-text: #e5e5e5;
+  --inline-code-bg: rgba(0, 0, 0, 0.06);
+
+  --overlay-bg: rgba(0, 0, 0, 0.35);
+  --modal-shadow: 0 16px 48px rgba(0, 0, 0, 0.25);
+  --toast-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+:root[data-theme="dark"] {
+  --sidebar-bg: #17181a;
+  --sidebar-bg-hover: #202123;
+  --sidebar-bg-selected: #26272a;
+  --sidebar-border: #2c2d30;
+  --sidebar-text: #ececf1;
+  --sidebar-text-muted: #9a9ba1;
+
+  --thread-bg: #1a1a1d;
+  --thread-bg-alt: #232326;
+  --border-color: #333336;
+  --text-color: #ececf1;
+  --text-muted: #9a9ba1;
+
+  --accent: #10a37f;
+  --accent-hover: #13b98f;
+  --on-accent: #ffffff;
+  --danger: #ff6b6b;
+  --error-bg: #2a1518;
+  --error-border: #7a2b30;
+  --error-text: #f5d5d7;
+
+  --code-bg: #0d0d0e;
+  --code-text: #e5e5e5;
+  --inline-code-bg: rgba(255, 255, 255, 0.08);
+
+  --overlay-bg: rgba(0, 0, 0, 0.55);
+  --modal-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  --toast-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
 * {
@@ -39,6 +87,7 @@ body {
   color: var(--text-color);
   background: var(--thread-bg);
   -webkit-font-smoothing: antialiased;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 button {
@@ -181,6 +230,7 @@ button {
 }
 
 .conversation-main {
+  flex: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -218,12 +268,16 @@ button {
   border-radius: 4px;
   font-size: 13px;
   line-height: 1;
-  padding: 4px 6px;
+  padding: 4px 3px;
 }
 
 .conversation-action:hover {
   background: var(--sidebar-border);
   color: var(--sidebar-text);
+}
+
+.pin-conversation.active {
+  color: var(--accent);
 }
 
 .sidebar-footer {
@@ -238,6 +292,13 @@ button {
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid var(--sidebar-border);
+}
+
+.sidebar-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 /* ---------- Info panel ---------- */
@@ -270,6 +331,33 @@ button {
   opacity: 0.8;
 }
 
+/* ---------- Theme toggle ---------- */
+
+.theme-toggle {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--sidebar-border);
+  background: transparent;
+  color: var(--sidebar-text-muted);
+  font-size: 12px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.theme-toggle:hover {
+  background: var(--sidebar-bg-hover);
+  color: var(--sidebar-text);
+}
+
+.theme-toggle:active {
+  transform: scale(0.94);
+}
+
 /* ---------- Shortcuts button + modal ---------- */
 
 .shortcuts-button {
@@ -300,7 +388,7 @@ button {
 .shortcuts-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.35);
+  background: var(--overlay-bg);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -315,7 +403,7 @@ button {
   color: var(--text-color);
   border-radius: 12px;
   padding: 16px 18px 18px;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--modal-shadow);
   animation: shortcuts-modal-in 0.15s ease-out;
 }
 
@@ -416,6 +504,22 @@ button {
 
 /* ---------- Thread ---------- */
 
+.thread-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.thread-header {
+  flex-shrink: 0;
+  padding: 8px 24px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: var(--font-mono);
+}
+
 .thread {
   flex: 1;
   overflow-y: auto;
@@ -453,7 +557,7 @@ button {
 
 .message-user .message-bubble {
   background: var(--accent);
-  color: #ffffff;
+  color: var(--on-accent);
   border-bottom-right-radius: 4px;
 }
 
@@ -473,8 +577,8 @@ button {
 }
 
 .message-text pre {
-  background: #1e1e1e;
-  color: #e5e5e5;
+  background: var(--code-bg);
+  color: var(--code-text);
   padding: 10px 12px;
   border-radius: 8px;
   overflow-x: auto;
@@ -488,7 +592,7 @@ button {
 }
 
 .message-text :not(pre) > code {
-  background: rgba(0, 0, 0, 0.06);
+  background: var(--inline-code-bg);
   padding: 1px 4px;
   border-radius: 4px;
 }
@@ -522,6 +626,24 @@ button {
   margin-bottom: 2px;
 }
 
+.message-text blockquote {
+  margin: 0 0 8px;
+  padding: 2px 12px;
+  border-left: 3px solid var(--border-color);
+  color: var(--text-muted);
+}
+
+.message-user .message-text blockquote {
+  border-left-color: rgba(255, 255, 255, 0.5);
+  color: inherit;
+}
+
+.message-text hr {
+  margin: 12px 0;
+  border: none;
+  border-top: 1px solid var(--border-color);
+}
+
 .message-text a {
   color: inherit;
   text-decoration: underline;
@@ -529,7 +651,7 @@ button {
 }
 
 .message-user .message-text a {
-  color: #ffffff;
+  color: var(--on-accent);
 }
 
 /* ---------- Keyboard focus visibility ---------- */
@@ -538,10 +660,13 @@ button {
 
 .new-conversation:focus-visible,
 .conversation-search:focus-visible,
+.theme-toggle:focus-visible,
 .shortcuts-button:focus-visible,
 .shortcuts-close:focus-visible,
 .conversation-action:focus-visible,
 .copy-message:focus-visible,
+.retry-message:focus-visible,
+.usage-detail-toggle:focus-visible,
 .composer-send:focus-visible,
 .error-toast-close:focus-visible {
   outline: 2px solid var(--accent);
@@ -586,6 +711,60 @@ button {
 
 .copy-message:active {
   transform: scale(0.96);
+}
+
+.retry-message {
+  border: 1px solid var(--border-color);
+  background: var(--thread-bg-alt);
+  color: var(--text-muted);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 11px;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.retry-message:hover:not(:disabled) {
+  background: var(--border-color);
+  color: var(--text-color);
+}
+
+.retry-message:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.usage-detail {
+  font-size: 11px;
+  color: var(--text-muted);
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.usage-detail-toggle {
+  cursor: pointer;
+  border: 1px solid var(--border-color);
+  background: var(--thread-bg-alt);
+  color: var(--text-muted);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 11px;
+}
+
+.usage-detail-toggle[aria-expanded="true"] {
+  border-radius: 10px 10px 0 0;
+}
+
+.usage-detail-body {
+  display: block;
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-top: none;
+  border-radius: 0 0 10px 10px;
+  background: var(--thread-bg-alt);
+  font-family: var(--font-mono);
+  white-space: nowrap;
 }
 
 /* ---------- Pending bubble ---------- */
@@ -674,7 +853,7 @@ button {
   border: none;
   border-radius: 10px;
   background: var(--accent);
-  color: #ffffff;
+  color: var(--on-accent);
   font-size: 14px;
   font-weight: 500;
 }
@@ -700,6 +879,34 @@ button {
   font-size: 15px;
 }
 
+.empty-state-card {
+  text-align: center;
+  max-width: 320px;
+}
+
+.empty-state-title {
+  margin: 0 0 16px;
+  color: var(--text-color);
+  font-weight: 500;
+}
+
+.empty-state-tips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.empty-state-tips li {
+  border: 1px solid var(--border-color);
+  background: var(--thread-bg-alt);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
 /* ---------- Error toast ---------- */
 
 .error-toast {
@@ -714,9 +921,9 @@ button {
   background: var(--error-bg);
   border: 1px solid var(--error-border);
   border-radius: 10px;
-  color: #f5d5d7;
+  color: var(--error-text);
   font-size: 13px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--toast-shadow);
 }
 
 .error-toast-message {
@@ -761,7 +968,12 @@ button {
   }
 
   .copy-message:active,
+  .theme-toggle:active,
   .shortcuts-button:active {
     transform: none;
+  }
+
+  body {
+    transition: none;
   }
 }

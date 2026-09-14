@@ -63,4 +63,39 @@ describe("renderMarkdown", () => {
     expect(renderMarkdown("[section](#top)")).toContain('href="#top"');
     expect(renderMarkdown("[home](/)")).toContain('href="/"');
   });
+
+  it("renders a horizontal rule", () => {
+    expect(renderMarkdown("---")).toBe("<hr>");
+  });
+
+  it("does not confuse a horizontal rule with an unordered list item", () => {
+    expect(renderMarkdown("- item")).toBe("<ul><li>item</li></ul>");
+    expect(renderMarkdown("---")).not.toContain("<ul>");
+  });
+
+  it("renders a single-line blockquote", () => {
+    expect(renderMarkdown("> a wise quote")).toBe("<blockquote>a wise quote</blockquote>");
+  });
+
+  it("renders a multi-line blockquote as one block", () => {
+    const html = renderMarkdown("> line one\n> line two");
+    expect(html).toBe("<blockquote>line one\nline two</blockquote>");
+  });
+
+  it("renders inline formatting inside a blockquote", () => {
+    expect(renderMarkdown("> **important**")).toBe(
+      "<blockquote><strong>important</strong></blockquote>",
+    );
+  });
+
+  it("escapes HTML inside a blockquote (escape-first safety preserved)", () => {
+    const html = renderMarkdown("> <script>alert(1)</script>");
+    expect(html).not.toContain("<script>");
+    expect(html).toContain("&lt;script&gt;");
+  });
+
+  it("keeps a rule and surrounding paragraphs as separate blocks", () => {
+    const html = renderMarkdown("above\n\n---\n\nbelow");
+    expect(html).toBe("<p>above</p><hr><p>below</p>");
+  });
 });

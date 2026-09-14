@@ -56,8 +56,8 @@ describe("Sidebar", () => {
 
   it("renders one row per conversation", () => {
     mockApp([
-      { id: "c1", title: "One", created_at: 0, updated_at: 0 },
-      { id: "c2", title: "Two", created_at: 0, updated_at: 0 },
+      { id: "c1", title: "One", created_at: 0, updated_at: 0, pinned: false },
+      { id: "c2", title: "Two", created_at: 0, updated_at: 0, pinned: false },
     ]);
     render(<Sidebar />);
     expect(screen.getAllByTestId("conversation-item")).toHaveLength(2);
