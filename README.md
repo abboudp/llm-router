@@ -38,7 +38,7 @@ make e2e     # run the Playwright end-to-end UI tests
 | GET    | `/v1/info`                                   | App name, version, and available models |
 | GET    | `/v1/conversations?q=`                       | List conversations, optionally filtered by title |
 | POST   | `/v1/conversations`                          | Create a conversation |
-| PATCH  | `/v1/conversations/{id}`                     | Rename a conversation |
+| PATCH  | `/v1/conversations/{id}`                     | Rename and/or pin/unpin a conversation |
 | DELETE | `/v1/conversations/{id}`                     | Delete a conversation |
 | GET    | `/v1/conversations/{id}/messages?limit=&before=` | List messages in a conversation, with optional pagination |
 | GET    | `/v1/conversations/{id}/export`              | Download the conversation as a markdown transcript |
