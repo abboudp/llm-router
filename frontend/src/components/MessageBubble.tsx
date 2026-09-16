@@ -6,17 +6,7 @@ import { LatencyChip } from "./LatencyChip";
 
 const COPIED_LABEL_MS = 1500;
 
-export function MessageBubble({
-  message,
-  isFinalReply = false,
-  retryDisabled = false,
-  onRetry,
-}: {
-  message: Message;
-  isFinalReply?: boolean;
-  retryDisabled?: boolean;
-  onRetry?: () => void;
-}) {
+export function MessageBubble({ message }: { message: Message }) {
   const isUser = message.role === "user";
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const [usageOpen, setUsageOpen] = useState(false);
@@ -28,7 +18,6 @@ export function MessageBubble({
   };
 
   const copyLabel = copyState === "copied" ? "Copied" : copyState === "failed" ? "Failed" : "Copy";
-  const canRetry = !isUser && isFinalReply && Boolean(onRetry);
 
   return (
     <div
@@ -77,17 +66,6 @@ export function MessageBubble({
           >
             {copyLabel}
           </button>
-          {canRetry && (
-            <button
-              className="retry-message"
-              data-testid="retry-message"
-              onClick={onRetry}
-              disabled={retryDisabled}
-              aria-label="Retry this message"
-            >
-              Retry
-            </button>
-          )}
         </div>
       )}
     </div>

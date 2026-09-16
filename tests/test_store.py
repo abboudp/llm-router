@@ -1,3 +1,5 @@
+import sqlite3
+
 from app.store import Store
 
 
@@ -189,4 +191,41 @@ def test_list_messages_before_cursor_from_another_conversation_is_ignored(tmp_pa
     # a cursor id that exists, but belongs to a different conversation,
     # must not leak that conversation's position into this one's results
     assert [m["id"] for m in s.list_messages(c1["id"], before=other_id)] == mine
+    s.close()
+
+
+def test_store_migrates_a_pre_existing_database_missing_the_pinned_column(tmp_path):
+    # Simulate a database file created before conversation pinning existed:
+    # a `conversations` table with no `pinned` column at all. `Store.__init__`
+    # must backfill the column rather than leave every `pinned`-referencing
+    # query (e.g. list_conversations's ORDER BY) raising OperationalError.
+    db_path = tmp_path / "legacy.db"
+    legacy = sqlite3.connect(str(db_path))
+    legacy.execute(
+        """
+        CREATE TABLE conversations (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL
+        )
+        """
+    )
+    legacy.execute(
+        "INSERT INTO conversations (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
+        ("legacy-1", "Pre-existing chat", 1.0, 1.0),
+    )
+    legacy.commit()
+    legacy.close()
+
+    s = Store(str(db_path))
+    conversations = s.list_conversations()
+    assert len(conversations) == 1
+    assert conversations[0]["id"] == "legacy-1"
+    assert conversations[0]["pinned"] is False
+
+    # Pinning round-trips normally once the column has been backfilled.
+    updated = s.update_conversation("legacy-1", pinned=True)
+    assert updated["pinned"] is True
+    assert s.get_conversation("legacy-1")["pinned"] is True
     s.close()

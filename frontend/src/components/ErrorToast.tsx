@@ -20,6 +20,16 @@ export function ErrorToast() {
   return (
     <div className="error-toast" data-testid="error-toast">
       <span className="error-toast-message">{state.error}</span>
+      {state.failedText != null && (
+        <button
+          className="retry-message"
+          data-testid="retry-message"
+          onClick={() => void actions.retryLast()}
+          aria-label="Retry sending message"
+        >
+          Retry
+        </button>
+      )}
       <button className="error-toast-close" onClick={() => actions.dismissError()} aria-label="Dismiss">
         &times;
       </button>

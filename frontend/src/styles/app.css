@@ -930,6 +930,18 @@ button {
   flex: 1;
 }
 
+.error-toast .retry-message {
+  flex-shrink: 0;
+  border-color: var(--error-border);
+  background: transparent;
+  color: var(--error-text);
+}
+
+.error-toast .retry-message:hover:not(:disabled) {
+  background: var(--error-border);
+  color: var(--error-text);
+}
+
 .error-toast-close {
   border: none;
   background: transparent;

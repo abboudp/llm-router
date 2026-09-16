@@ -5,7 +5,7 @@ import { MessageBubble } from "./MessageBubble";
 import { PendingBubble } from "./PendingBubble";
 
 export function Thread() {
-  const { state, actions } = useApp();
+  const { state } = useApp();
   const bottomRef = useRef<HTMLDivElement>(null);
   const total = totalTokens(state.messages);
 
@@ -21,14 +21,8 @@ export function Thread() {
         </div>
       )}
       <div className="thread" data-testid="thread">
-        {state.messages.map((message, index) => (
-          <MessageBubble
-            key={message.id}
-            message={message}
-            isFinalReply={index === state.messages.length - 1}
-            retryDisabled={state.pending}
-            onRetry={() => void actions.retryLast()}
-          />
+        {state.messages.map((message) => (
+          <MessageBubble key={message.id} message={message} />
         ))}
         {state.pending && <PendingBubble />}
         <div ref={bottomRef} />

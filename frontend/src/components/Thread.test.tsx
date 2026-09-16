@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppState } from "../state/store";
 import { useApp } from "../state/store";
@@ -7,7 +7,7 @@ import { Thread } from "./Thread";
 vi.mock("../state/store", () => ({ useApp: vi.fn() }));
 
 function mockApp(messages: AppState["messages"], pending = false) {
-  const actions = { retryLast: vi.fn() };
+  const actions = {};
   vi.mocked(useApp).mockReturnValue({
     state: { messages, pending } as AppState,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -40,18 +40,5 @@ describe("Thread", () => {
     mockApp([userMsg, assistantMsg({ prompt_tokens: 10, completion_tokens: 5 })]);
     render(<Thread />);
     expect(screen.getByTestId("thread-token-total")).toHaveTextContent("15 tokens this session");
-  });
-
-  it("wires retry on the last message to actions.retryLast", () => {
-    const actions = mockApp([userMsg, assistantMsg()]);
-    render(<Thread />);
-    fireEvent.click(screen.getByTestId("retry-message"));
-    expect(actions.retryLast).toHaveBeenCalledTimes(1);
-  });
-
-  it("disables retry while a send is pending", () => {
-    mockApp([userMsg, assistantMsg()], true);
-    render(<Thread />);
-    expect(screen.getByTestId("retry-message")).toBeDisabled();
   });
 });
