@@ -43,7 +43,9 @@ export function ConversationItem({ conversation }: { conversation: Conversation 
       onClick={() => void actions.select(conversation.id)}
     >
       <span className="conversation-main">
-        <span className="conversation-title">{conversation.title}</span>
+        <span className="conversation-title" data-testid="conversation-title">
+          {conversation.title}
+        </span>
         <span className="conversation-time">{relativeTime(conversation.updated_at)}</span>
       </span>
       <span className="conversation-actions">

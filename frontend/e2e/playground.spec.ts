@@ -46,7 +46,11 @@ test("conversation persists across reload", async ({ page }) => {
   await expect(page.getByTestId("message-assistant").first()).toBeVisible();
 
   await page.reload();
-  await page.getByTestId("conversation-item").first().click();
+  await page
+    .getByTestId("conversation-item")
+    .first()
+    .getByTestId("conversation-title")
+    .click();
   await expect(page.getByTestId("message-user").first()).toContainText("Remember me");
   await expect(page.getByTestId("message-assistant").first()).toBeVisible();
 });
