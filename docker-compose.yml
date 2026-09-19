@@ -1,0 +1,19 @@
+services:
+  llm-service-1:
+    image: ghcr.io/abboudp/llm-service:latest
+    environment:
+      REPLICA_ID: "1"
+    ports:
+      - "9001:9000"
+  llm-service-2:
+    image: ghcr.io/abboudp/llm-service:latest
+    environment:
+      REPLICA_ID: "2"
+    ports:
+      - "9002:9000"
+  llm-service-3:
+    image: ghcr.io/abboudp/llm-service:latest
+    environment:
+      REPLICA_ID: "3"
+    ports:
+      - "9003:9000"
