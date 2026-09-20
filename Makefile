@@ -1,4 +1,4 @@
-.PHONY: services dev bench
+.PHONY: services dev bench ui
 
 services:
 	docker compose up -d
@@ -8,3 +8,6 @@ dev:
 
 bench:
 	k6 run bench/k6.js
+
+ui:
+	cd frontend && npm ci && npm run build
