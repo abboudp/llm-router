@@ -1,4 +1,5 @@
-import type { ChatResponse, Conversation, Message } from "./types";
+import { withQuery } from "../lib/query";
+import type { ChatResponse, Conversation, Info, Message } from "./types";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const resp = await fetch(path, {
@@ -20,7 +21,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  listConversations: () => request<Conversation[]>("/v1/conversations"),
+  listConversations: (q?: string) => request<Conversation[]>(withQuery("/v1/conversations", { q })),
   createConversation: (title?: string) =>
     request<Conversation>("/v1/conversations", {
       method: "POST",
@@ -33,11 +34,18 @@ export const api = {
     }),
   deleteConversation: (id: string) =>
     request<void>(`/v1/conversations/${id}`, { method: "DELETE" }),
-  listMessages: (id: string) => request<Message[]>(`/v1/conversations/${id}/messages`),
+  listMessages: (id: string, opts?: { limit?: number; before?: string }) =>
+    request<Message[]>(
+      withQuery(`/v1/conversations/${id}/messages`, {
+        limit: opts?.limit,
+        before: opts?.before,
+      }),
+    ),
   sendChat: (params: {
     conversation_id: string;
     message: string;
     max_tokens: number;
     model?: string;
   }) => request<ChatResponse>("/v1/chat", { method: "POST", body: JSON.stringify(params) }),
+  getInfo: () => request<Info>("/v1/info"),
 };
