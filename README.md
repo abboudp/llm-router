@@ -1,58 +1,54 @@
 # llm-router
 
-llm-router is a gateway that fronts the LLM backend fleet and forwards generation requests to it, giving clients a single stable endpoint to call.
-
-## API
-
-### `POST /v1/generate`
-
-Request:
-
-```json
-{
-  "prompt": "Write a haiku about garbage collection.",
-  "max_tokens": 64
-}
-```
-
-Response:
-
-```json
-{
-  "completion": "Unreachable strings...\nswept from the heap in silence...\nmemory breathes free.",
-  "signature": "c4306af79b06e2249ce788596e2699f876b342f429611c76f4d75619d35117fe"
-}
-```
+LLM gateway with a built-in playground UI — routes generation requests across a fleet of model backends and serves a chat interface for internal use.
 
 ## Prerequisites
 
 - Docker
 - [uv](https://docs.astral.sh/uv/)
-- [k6](https://k6.io/)
 - Python 3.12
+- Node >= 20
+- [k6](https://k6.io/)
 
 ## Quickstart
 
-In three terminals:
+In separate terminals:
 
 ```bash
-# terminal 1: start the backend fleet
-make services
-
-# terminal 2: start the router
-make dev
-
-# terminal 3: run the bench harness
-make bench
+make services   # start the backend fleet
+make ui         # build the playground frontend
+make dev        # start the router (serves the API and the UI)
 ```
+
+Open http://localhost:8000.
+
+Other targets:
+
+```bash
+make bench   # run the k6 load harness
+make e2e     # run the Playwright end-to-end UI tests
+```
+
+## API
+
+| Method | Path                              | Description                              |
+|--------|-----------------------------------|-------------------------------------------|
+| POST   | `/v1/generate`                    | Forward a single prompt to the backend fleet |
+| POST   | `/v1/chat`                        | Send a message to a conversation and get a reply |
+| GET    | `/v1/conversations`               | List conversations |
+| POST   | `/v1/conversations`               | Create a conversation |
+| PATCH  | `/v1/conversations/{id}`          | Rename a conversation |
+| DELETE | `/v1/conversations/{id}`          | Delete a conversation |
+| GET    | `/v1/conversations/{id}/messages` | List messages in a conversation |
 
 ## Layout
 
-- `app/main.py` — FastAPI app and the `/v1/generate` route
-- `app/upstream.py` — connection pool that forwards requests to the backend fleet
-- `app/config.py` — backend URL configuration
-- `bench/k6.js` — k6 load test script
-- `bench/workload.json` — weighted prompt set used by the load test
+- `app/` — FastAPI gateway: generate/chat routes, conversation store, request logging middleware
+- `bench/` — k6 load test script and weighted workload
 - `docker-compose.yml` — backend fleet service definitions
-- `Makefile` — `make services` / `make dev` / `make bench`
-- `tests/` — unit tests
+- `frontend/` — React + TypeScript playground UI (Vite, Vitest, Playwright)
+- `Makefile` — `make services` / `make ui` / `make dev` / `make bench` / `make e2e`
+- `pyproject.toml` — Python project and dependencies (uv)
+- `scripts/` — helper scripts (e2e stack bootstrap)
+- `tests/` — backend unit tests (pytest)
+- `uv.lock` — locked Python dependencies

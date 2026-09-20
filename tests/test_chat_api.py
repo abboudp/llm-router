@@ -32,7 +32,7 @@ def test_chat_roundtrip_persists_and_titles():
     c = chat_client(pool)
     cid = c.post("/v1/conversations", json={}).json()["id"]
 
-    resp = c.post("/v1/chat", json={"conversation_id": cid, "message": "What is a p99 metric?"})
+    resp = c.post("/v1/chat", json={"conversation_id": cid, "message": "What is a hash map?"})
     body = resp.json()
     c.__exit__(None, None, None)
 
@@ -44,7 +44,7 @@ def test_chat_roundtrip_persists_and_titles():
 
     # exactly one upstream call, carrying flattened history
     assert len(pool.calls) == 1
-    assert pool.calls[0]["prompt"].endswith("User: What is a p99 metric?\nAssistant:")
+    assert pool.calls[0]["prompt"].endswith("User: What is a hash map?\nAssistant:")
     assert pool.calls[0]["max_tokens"] == 64
 
 
