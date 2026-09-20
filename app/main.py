@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from .middleware.logging import RequestLogMiddleware
+from .routes.conversations import router as conversations_router
 from .schemas import GenerateRequest
 from .store import Store
 from .upstream import UpstreamPool
@@ -30,3 +31,6 @@ app.add_middleware(RequestLogMiddleware)
 async def generate(req: GenerateRequest):
     status, body = await app.state.pool.forward(req.model_dump())
     return JSONResponse(status_code=status, content=body)
+
+
+app.include_router(conversations_router)
