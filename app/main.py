@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from .middleware.logging import RequestLogMiddleware
+from .routes.chat import router as chat_router
 from .routes.conversations import router as conversations_router
 from .schemas import GenerateRequest
 from .store import Store
@@ -34,3 +35,4 @@ async def generate(req: GenerateRequest):
 
 
 app.include_router(conversations_router)
+app.include_router(chat_router)
