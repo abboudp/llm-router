@@ -3,14 +3,14 @@ import time
 from fastapi import APIRouter, HTTPException, Request
 
 from ..prompting import flatten_history
-from ..schemas import ChatRequest
+from ..schemas import ChatRequest, ChatTurnResponse
 
 router = APIRouter(tags=["chat"])
 
 _AUTO_TITLE_LIMIT = 48
 
 
-@router.post("/v1/chat")
+@router.post("/v1/chat", response_model=ChatTurnResponse)
 async def chat(body: ChatRequest, request: Request):
     store = request.app.state.store
     conversation = store.get_conversation(body.conversation_id)
