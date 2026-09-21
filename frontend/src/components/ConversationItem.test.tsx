@@ -11,6 +11,7 @@ const conversation = {
   title: "Kubernetes migration plan",
   created_at: 0,
   updated_at: Date.now() / 1000 - 120,
+  pinned: false,
 };
 
 function mockApp(
@@ -21,6 +22,7 @@ function mockApp(
     select: vi.fn(),
     rename: vi.fn(),
     remove: vi.fn(),
+    setPinned: vi.fn(),
     ...actionOverrides,
   };
   vi.mocked(useApp).mockReturnValue({
@@ -92,5 +94,35 @@ describe("ConversationItem", () => {
     render(<ConversationItem conversation={conversation} />);
     fireEvent.click(screen.getByTestId("export-conversation"));
     expect(actions.select).not.toHaveBeenCalled();
+  });
+
+  it("pins an unpinned conversation without also selecting the row", () => {
+    const actions = mockApp();
+    render(<ConversationItem conversation={conversation} />);
+    fireEvent.click(screen.getByTestId("pin-conversation"));
+    expect(actions.setPinned).toHaveBeenCalledWith("c1", true);
+    expect(actions.select).not.toHaveBeenCalled();
+  });
+
+  it("unpins an already-pinned conversation", () => {
+    const actions = mockApp();
+    render(<ConversationItem conversation={{ ...conversation, pinned: true }} />);
+    fireEvent.click(screen.getByTestId("pin-conversation"));
+    expect(actions.setPinned).toHaveBeenCalledWith("c1", false);
+  });
+
+  it("marks the pin button as pressed only when the conversation is pinned", () => {
+    mockApp();
+    const { rerender } = render(<ConversationItem conversation={conversation} />);
+    expect(screen.getByTestId("pin-conversation")).toHaveAttribute("aria-pressed", "false");
+
+    rerender(<ConversationItem conversation={{ ...conversation, pinned: true }} />);
+    expect(screen.getByTestId("pin-conversation")).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("adds a pinned class to the row when pinned", () => {
+    mockApp();
+    render(<ConversationItem conversation={{ ...conversation, pinned: true }} />);
+    expect(screen.getByTestId("conversation-item")).toHaveClass("pinned");
   });
 });

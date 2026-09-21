@@ -32,6 +32,11 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ title }),
     }),
+  setPinned: (id: string, pinned: boolean) =>
+    request<Conversation>(`/v1/conversations/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ pinned }),
+    }),
   deleteConversation: (id: string) =>
     request<void>(`/v1/conversations/${id}`, { method: "DELETE" }),
   listMessages: (id: string, opts?: { limit?: number; before?: string }) =>

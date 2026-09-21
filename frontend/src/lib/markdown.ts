@@ -28,10 +28,14 @@ function inline(text: string): string {
     .replace(/`([^`]+)`/g, "<code>$1</code>");
 }
 
-/** Renders one blank-line-delimited block: a heading, a list, or a plain paragraph. */
+/** Renders one blank-line-delimited block: a rule, heading, list, blockquote, or paragraph. */
 function renderBlock(block: string): string {
   const trimmed = block.trim();
   const lines = trimmed.split("\n");
+
+  if (lines.length === 1 && /^-{3,}$/.test(lines[0])) {
+    return "<hr>";
+  }
 
   const heading = lines.length === 1 ? /^(#{1,3})\s+(.+)$/.exec(lines[0]) : null;
   if (heading) {
@@ -49,14 +53,22 @@ function renderBlock(block: string): string {
     return `<ol>${items.join("")}</ol>`;
   }
 
+  // The whole input is HTML-escaped before blocks are split out, so a
+  // literal ">" has already become "&gt;" by the time we get here.
+  if (lines.every((line) => /^&gt;\s?/.test(line))) {
+    const content = lines.map((line) => line.replace(/^&gt;\s?/, "")).join("\n");
+    return `<blockquote>${inline(content)}</blockquote>`;
+  }
+
   return `<p>${inline(trimmed)}</p>`;
 }
 
 /**
  * Minimal, safe markdown renderer: escape first, then fenced code blocks,
- * headings (#/##/###), unordered/ordered lists, links, and bold/italic/code.
- * Links are restricted to http(s)/mailto/relative targets — anything else
- * (e.g. `javascript:`) is neutralized.
+ * headings (#/##/###), unordered/ordered lists, blockquotes, horizontal
+ * rules, links, and bold/italic/code. Links are restricted to
+ * http(s)/mailto/relative targets — anything else (e.g. `javascript:`) is
+ * neutralized.
  */
 export function renderMarkdown(text: string): string {
   const parts = escapeHtml(text).split(/```\n?/);

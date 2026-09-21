@@ -19,6 +19,11 @@ export function ConversationItem({ conversation }: { conversation: Conversation 
     void actions.remove(conversation.id);
   };
 
+  const togglePin = (event: React.MouseEvent) => {
+    event.stopPropagation();
+    void actions.setPinned(conversation.id, !conversation.pinned);
+  };
+
   const exportConversation = (event: React.MouseEvent) => {
     event.stopPropagation();
     const link = document.createElement("a");
@@ -31,7 +36,9 @@ export function ConversationItem({ conversation }: { conversation: Conversation 
 
   return (
     <div
-      className={`conversation-item${selected ? " selected" : ""}`}
+      className={`conversation-item${selected ? " selected" : ""}${
+        conversation.pinned ? " pinned" : ""
+      }`}
       data-testid="conversation-item"
       onClick={() => void actions.select(conversation.id)}
     >
@@ -40,6 +47,15 @@ export function ConversationItem({ conversation }: { conversation: Conversation 
         <span className="conversation-time">{relativeTime(conversation.updated_at)}</span>
       </span>
       <span className="conversation-actions">
+        <button
+          className={`conversation-action pin-conversation${conversation.pinned ? " active" : ""}`}
+          data-testid="pin-conversation"
+          onClick={togglePin}
+          aria-label={conversation.pinned ? "Unpin conversation" : "Pin conversation"}
+          aria-pressed={conversation.pinned}
+        >
+          📌
+        </button>
         <button
           className="conversation-action"
           data-testid="export-conversation"

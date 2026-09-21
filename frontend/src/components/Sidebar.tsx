@@ -4,6 +4,7 @@ import { useApp } from "../state/store";
 import { ConversationItem } from "./ConversationItem";
 import { InfoPanel } from "./InfoPanel";
 import { SettingsPanel } from "./SettingsPanel";
+import { ThemeToggle } from "./ThemeToggle";
 
 const SEARCH_DEBOUNCE_MS = 250;
 
@@ -67,14 +68,17 @@ export function Sidebar() {
         <SettingsPanel />
         <div className="sidebar-footer-row">
           <InfoPanel />
-          <button
-            className="shortcuts-button"
-            data-testid="shortcuts-button"
-            aria-label="Keyboard shortcuts"
-            onClick={() => actions.openShortcuts()}
-          >
-            ?
-          </button>
+          <div className="sidebar-footer-actions">
+            <ThemeToggle />
+            <button
+              className="shortcuts-button"
+              data-testid="shortcuts-button"
+              aria-label="Keyboard shortcuts"
+              onClick={() => actions.openShortcuts()}
+            >
+              ?
+            </button>
+          </div>
         </div>
       </div>
     </div>
