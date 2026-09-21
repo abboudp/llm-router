@@ -7,7 +7,7 @@ LLM gateway with a built-in playground UI — routes generation requests across 
 - Docker
 - [uv](https://docs.astral.sh/uv/)
 - Python 3.12
-- Node >= 20
+- Node >= 22
 - [k6](https://k6.io/)
 
 ## Quickstart
