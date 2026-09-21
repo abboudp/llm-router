@@ -64,6 +64,12 @@ describe("renderMarkdown", () => {
     expect(renderMarkdown("[home](/)")).toContain('href="/"');
   });
 
+  it("neutralizes a protocol-relative href instead of treating it as root-relative", () => {
+    const html = renderMarkdown("[click me](//evil.com)");
+    expect(html).not.toContain('href="//evil.com"');
+    expect(html).toContain('href="#"');
+  });
+
   it("renders a horizontal rule", () => {
     expect(renderMarkdown("---")).toBe("<hr>");
   });

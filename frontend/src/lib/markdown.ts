@@ -13,7 +13,12 @@ const SAFE_HREF = /^(https?:|mailto:)/i;
 
 function sanitizeHref(rawHref: string): string {
   const href = rawHref.trim();
-  if (href.startsWith("#") || href.startsWith("/")) return href;
+  if (href.startsWith("#")) return href;
+  // A root-relative path ("/foo") stays on this origin and is safe, but a
+  // *protocol-relative* one ("//evil.com") is not: browsers resolve the
+  // leading "//" against the current scheme, so it navigates off-site just
+  // like a full "https://evil.com" href would.
+  if (href.startsWith("/") && !href.startsWith("//")) return href;
   return SAFE_HREF.test(href) ? href : "#";
 }
 
