@@ -8,6 +8,7 @@ async function newConversation(page, title: string) {
   await expect(page.getByTestId("conversation-item")).toHaveCount(before + 1);
 
   const item = page.getByTestId("conversation-item").first();
+  await item.getByTestId("conversation-menu").click();
   page.once("dialog", (dialog) => dialog.accept(title));
   await item.getByTestId("rename-conversation").click();
   await expect(item).toContainText(title);
@@ -28,6 +29,7 @@ test("pinning a conversation sorts it first, even after reload", async ({ page }
   await expect(page.getByTestId("conversation-item").first()).toContainText(newerTitle);
 
   const pinnedRow = page.getByTestId("conversation-item").filter({ hasText: pinnedTitle });
+  await pinnedRow.getByTestId("conversation-menu").click();
   await pinnedRow.getByTestId("pin-conversation").click();
   await expect(pinnedRow).toHaveClass(/pinned/);
 
@@ -41,16 +43,13 @@ test("pinning a conversation sorts it first, even after reload", async ({ page }
   // the shared backend's list (see scripts/run_e2e.sh) for every other spec
   // that runs after this one, breaking their "the newest conversation is
   // first" assumptions. Delete both conversations this test created.
-  await page
-    .getByTestId("conversation-item")
-    .filter({ hasText: pinnedTitle })
-    .getByTestId("delete-conversation")
-    .click();
-  await page
-    .getByTestId("conversation-item")
-    .filter({ hasText: newerTitle })
-    .getByTestId("delete-conversation")
-    .click();
+  const pinnedForCleanup = page.getByTestId("conversation-item").filter({ hasText: pinnedTitle });
+  await pinnedForCleanup.getByTestId("conversation-menu").click();
+  await pinnedForCleanup.getByTestId("delete-conversation").click();
+
+  const newerForCleanup = page.getByTestId("conversation-item").filter({ hasText: newerTitle });
+  await newerForCleanup.getByTestId("conversation-menu").click();
+  await newerForCleanup.getByTestId("delete-conversation").click();
   await expect(page.getByText(pinnedTitle)).not.toBeVisible();
   await expect(page.getByText(newerTitle)).not.toBeVisible();
 });

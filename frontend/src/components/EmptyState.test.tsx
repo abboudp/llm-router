@@ -12,6 +12,6 @@ describe("EmptyState", () => {
     render(<EmptyState />);
     expect(screen.getByText(/Shift\+Enter/)).toBeInTheDocument();
     expect(screen.getByText(/search your conversations/)).toBeInTheDocument();
-    expect(screen.getByText(/Cmd\/Ctrl\+K/)).toBeInTheDocument();
+    expect(screen.getByText(/closes an open conversation menu/)).toBeInTheDocument();
   });
 });

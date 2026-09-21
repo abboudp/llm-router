@@ -1,23 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isEditableTarget, isNewConversationHotkey } from "./keyboard";
-
-describe("isNewConversationHotkey", () => {
-  it("matches Cmd+K on macOS", () => {
-    expect(isNewConversationHotkey({ metaKey: true, ctrlKey: false, key: "k" })).toBe(true);
-  });
-
-  it("matches Ctrl+K elsewhere", () => {
-    expect(isNewConversationHotkey({ metaKey: false, ctrlKey: true, key: "K" })).toBe(true);
-  });
-
-  it("does not match K alone", () => {
-    expect(isNewConversationHotkey({ metaKey: false, ctrlKey: false, key: "k" })).toBe(false);
-  });
-
-  it("does not match Cmd/Ctrl with a different key", () => {
-    expect(isNewConversationHotkey({ metaKey: true, ctrlKey: false, key: "j" })).toBe(false);
-  });
-});
+import { isEditableTarget } from "./keyboard";
 
 describe("isEditableTarget", () => {
   it("treats inputs, textareas, and selects as editable", () => {

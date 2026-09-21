@@ -11,6 +11,7 @@ async function newConversation(page, title: string) {
   await expect(page.getByTestId("conversation-item")).toHaveCount(before + 1);
 
   const item = page.getByTestId("conversation-item").first();
+  await item.getByTestId("conversation-menu").click();
   page.once("dialog", (dialog) => dialog.accept(title));
   await item.getByTestId("rename-conversation").click();
   await expect(item).toContainText(title);
@@ -49,6 +50,7 @@ test("export downloads a markdown file named after the conversation", async ({ p
   await expect(page.getByTestId("message-assistant").first()).toBeVisible();
 
   const item = page.getByTestId("conversation-item").first();
+  await item.getByTestId("conversation-menu").click();
   const [download] = await Promise.all([
     page.waitForEvent("download"),
     item.getByTestId("export-conversation").click(),

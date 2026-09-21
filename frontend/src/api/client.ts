@@ -1,5 +1,5 @@
 import { withQuery } from "../lib/query";
-import type { ChatResponse, Conversation, Info, Message } from "./types";
+import type { ChatResponse, Conversation, Message } from "./types";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const resp = await fetch(path, {
@@ -46,11 +46,6 @@ export const api = {
         before: opts?.before,
       }),
     ),
-  sendChat: (params: {
-    conversation_id: string;
-    message: string;
-    max_tokens: number;
-    model?: string;
-  }) => request<ChatResponse>("/v1/chat", { method: "POST", body: JSON.stringify(params) }),
-  getInfo: () => request<Info>("/v1/info"),
+  sendChat: (params: { conversation_id: string; message: string }) =>
+    request<ChatResponse>("/v1/chat", { method: "POST", body: JSON.stringify(params) }),
 };

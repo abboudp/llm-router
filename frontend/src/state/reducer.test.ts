@@ -95,13 +95,6 @@ describe("reducer", () => {
     expect(s.conversations).toHaveLength(1);
   });
 
-  it("opens and closes the shortcuts modal", () => {
-    let s = reducer(initialState, { type: "shortcuts_opened" });
-    expect(s.shortcutsOpen).toBe(true);
-    s = reducer(s, { type: "shortcuts_closed" });
-    expect(s.shortcutsOpen).toBe(false);
-  });
-
   it("tracks whether a conversation creation is in flight", () => {
     let s = reducer(initialState, { type: "conversation_create_started" });
     expect(s.creatingConversation).toBe(true);

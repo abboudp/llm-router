@@ -1,8 +1,3 @@
-/** True for the Cmd+K (macOS) / Ctrl+K (everywhere else) "new conversation" hotkey. */
-export function isNewConversationHotkey(event: Pick<KeyboardEvent, "metaKey" | "ctrlKey" | "key">): boolean {
-  return (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k";
-}
-
 const EDITABLE_TAGS = new Set(["INPUT", "TEXTAREA", "SELECT"]);
 
 /**

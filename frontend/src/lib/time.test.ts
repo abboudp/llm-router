@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatUptime, relativeTime } from "./time";
+import { relativeTime } from "./time";
 
 describe("relativeTime", () => {
   const now = 1_700_000_000;
@@ -38,30 +38,5 @@ describe("relativeTime", () => {
   it("defaults `now` to the current time when omitted", () => {
     const nowSeconds = Date.now() / 1000;
     expect(relativeTime(nowSeconds - 1)).toBe("just now");
-  });
-});
-
-describe("formatUptime", () => {
-  it("shows whole seconds under a minute", () => {
-    expect(formatUptime(0)).toBe("0s");
-    expect(formatUptime(45)).toBe("45s");
-  });
-
-  it("shows minutes under an hour", () => {
-    expect(formatUptime(60)).toBe("1m");
-    expect(formatUptime(59 * 60 + 59)).toBe("59m");
-  });
-
-  it("shows hours and minutes under a day", () => {
-    expect(formatUptime(3600)).toBe("1h 0m");
-    expect(formatUptime(3 * 3600 + 5 * 60)).toBe("3h 5m");
-  });
-
-  it("shows days and hours beyond a day", () => {
-    expect(formatUptime(2 * 86400 + 4 * 3600)).toBe("2d 4h");
-  });
-
-  it("clamps negative durations to 0s", () => {
-    expect(formatUptime(-5)).toBe("0s");
   });
 });

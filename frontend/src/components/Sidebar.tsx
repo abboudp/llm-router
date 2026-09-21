@@ -2,8 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { isEditableTarget } from "../lib/keyboard";
 import { useApp } from "../state/store";
 import { ConversationItem } from "./ConversationItem";
-import { InfoPanel } from "./InfoPanel";
-import { SettingsPanel } from "./SettingsPanel";
 import { ThemeToggle } from "./ThemeToggle";
 
 const SEARCH_DEBOUNCE_MS = 250;
@@ -65,21 +63,7 @@ export function Sidebar() {
         )}
       </div>
       <div className="sidebar-footer">
-        <SettingsPanel />
-        <div className="sidebar-footer-row">
-          <InfoPanel />
-          <div className="sidebar-footer-actions">
-            <ThemeToggle />
-            <button
-              className="shortcuts-button"
-              data-testid="shortcuts-button"
-              aria-label="Keyboard shortcuts"
-              onClick={() => actions.openShortcuts()}
-            >
-              ?
-            </button>
-          </div>
-        </div>
+        <ThemeToggle />
       </div>
     </div>
   );

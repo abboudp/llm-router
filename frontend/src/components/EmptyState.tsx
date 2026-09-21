@@ -1,7 +1,7 @@
 const TIPS = [
   "Enter to send, Shift+Enter for a new line",
   "Press / to search your conversations",
-  "Cmd/Ctrl+K starts a new chat",
+  "Esc closes an open conversation menu",
 ];
 
 export function EmptyState() {
