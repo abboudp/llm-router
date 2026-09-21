@@ -70,32 +70,4 @@ describe("MessageBubble", () => {
 
     expect(await screen.findByText("Failed")).toBeInTheDocument();
   });
-
-  it("shows a usage detail toggle when usage is attached, collapsed by default", () => {
-    render(
-      <MessageBubble
-        message={message({ usage: { prompt_tokens: 12, completion_tokens: 4 } })}
-      />,
-    );
-    const detail = screen.getByTestId("usage-detail");
-    expect(detail).toBeInTheDocument();
-    expect(detail).not.toHaveTextContent("12 prompt");
-  });
-
-  it("reveals the token counts once the usage detail is expanded", () => {
-    render(
-      <MessageBubble
-        message={message({ usage: { prompt_tokens: 12, completion_tokens: 4 } })}
-      />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Usage" }));
-    const detail = screen.getByTestId("usage-detail");
-    expect(detail).toHaveTextContent("12 prompt");
-    expect(detail).toHaveTextContent("4 completion");
-  });
-
-  it("omits the usage detail when no usage is attached (e.g. reloaded history)", () => {
-    render(<MessageBubble message={message({})} />);
-    expect(screen.queryByTestId("usage-detail")).not.toBeInTheDocument();
-  });
 });

@@ -64,6 +64,17 @@ def test_chat_persists_both_turns_and_uses_history():
     assert convo_title == "first"  # auto-titled from first message
 
 
+def test_chat_forwards_non_default_max_tokens_to_pool():
+    pool = FakePool()
+    c = chat_client(pool)
+    cid = c.post("/v1/conversations", json={}).json()["id"]
+
+    c.post("/v1/chat", json={"conversation_id": cid, "message": "hi", "max_tokens": 16})
+    c.__exit__(None, None, None)
+
+    assert pool.calls[0]["max_tokens"] == 16
+
+
 def test_chat_unknown_conversation_404():
     c = chat_client(FakePool())
     resp = c.post("/v1/chat", json={"conversation_id": "nope", "message": "hi"})

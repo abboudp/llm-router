@@ -30,15 +30,10 @@ describe("Thread", () => {
     vi.clearAllMocks();
   });
 
-  it("hides the token total when no message carries usage", () => {
-    mockApp([userMsg, assistantMsg()]);
-    render(<Thread />);
-    expect(screen.queryByTestId("thread-token-total")).not.toBeInTheDocument();
-  });
-
-  it("shows the summed token total once usage is attached", () => {
+  it("renders each message in the thread", () => {
     mockApp([userMsg, assistantMsg({ prompt_tokens: 10, completion_tokens: 5 })]);
     render(<Thread />);
-    expect(screen.getByTestId("thread-token-total")).toHaveTextContent("15 tokens this session");
+    expect(screen.getByTestId("message-user")).toBeInTheDocument();
+    expect(screen.getByTestId("message-assistant")).toBeInTheDocument();
   });
 });

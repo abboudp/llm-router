@@ -2,21 +2,14 @@ import { createContext, useCallback, useContext, useEffect, useReducer, useRef }
 import { api } from "../api/client";
 import type { Conversation, Message, Usage } from "../api/types";
 
-export interface Settings {
-  maxTokens: number;
-  model: string;
-}
-
 export interface AppState {
   conversations: Conversation[];
   selectedId: string | null;
   messages: Message[];
   pending: boolean;
-  settings: Settings;
   error: string | null;
   failedText: string | null;
   searchQuery: string;
-  shortcutsOpen: boolean;
   creatingConversation: boolean;
 }
 
@@ -25,11 +18,9 @@ export const initialState: AppState = {
   selectedId: null,
   messages: [],
   pending: false,
-  settings: { maxTokens: 64, model: "default" },
   error: null,
   failedText: null,
   searchQuery: "",
-  shortcutsOpen: false,
   creatingConversation: false,
 };
 
@@ -39,12 +30,8 @@ export type Action =
   | { type: "send_started"; userText: string }
   | { type: "send_succeeded"; message: Message; usage: Usage | null }
   | { type: "send_failed"; error: string; userText: string }
-  | { type: "settings_changed"; settings: Partial<Settings> }
-  | { type: "error"; error: string }
   | { type: "error_dismissed" }
   | { type: "search_changed"; query: string }
-  | { type: "shortcuts_opened" }
-  | { type: "shortcuts_closed" }
   | { type: "conversation_create_started" }
   | { type: "conversation_create_finished" };
 
@@ -98,18 +85,10 @@ export function reducer(state: AppState, action: Action): AppState {
         failedText: action.userText,
         messages: state.messages.slice(0, -1),
       };
-    case "settings_changed":
-      return { ...state, settings: { ...state.settings, ...action.settings } };
-    case "error":
-      return { ...state, error: action.error };
     case "error_dismissed":
       return { ...state, error: null };
     case "search_changed":
       return { ...state, searchQuery: action.query };
-    case "shortcuts_opened":
-      return { ...state, shortcutsOpen: true };
-    case "shortcuts_closed":
-      return { ...state, shortcutsOpen: false };
     case "conversation_create_started":
       return { ...state, creatingConversation: true };
     case "conversation_create_finished":
@@ -161,8 +140,8 @@ export function buildValue(
     refresh,
     select,
     newConversation: async () => {
-      // Guards against a burst of clicks or repeated Cmd/Ctrl+K presses
-      // firing several concurrent creates before the first one lands.
+      // Guards against a burst of clicks firing several concurrent creates
+      // before the first one lands.
       if (state.creatingConversation) return;
       dispatch({ type: "conversation_create_started" });
       try {
@@ -186,12 +165,7 @@ export function buildValue(
       if (!state.selectedId || state.pending || !text.trim()) return;
       dispatch({ type: "send_started", userText: text });
       try {
-        const resp = await api.sendChat({
-          conversation_id: state.selectedId,
-          message: text,
-          max_tokens: state.settings.maxTokens,
-          ...(state.settings.model !== "default" ? { model: state.settings.model } : {}),
-        });
+        const resp = await api.sendChat({ conversation_id: state.selectedId, message: text });
         dispatch({ type: "send_succeeded", message: resp.message, usage: resp.usage });
         await refresh(); // titles/order may have changed
       } catch (err) {
@@ -211,15 +185,11 @@ export function buildValue(
       await api.setPinned(id, pinned);
       await refresh();
     },
-    setSettings: (settings: Partial<Settings>) =>
-      dispatch({ type: "settings_changed", settings }),
     dismissError: () => dispatch({ type: "error_dismissed" }),
     search: async (query: string) => {
       dispatch({ type: "search_changed", query });
       await refresh(query);
     },
-    openShortcuts: () => dispatch({ type: "shortcuts_opened" }),
-    closeShortcuts: () => dispatch({ type: "shortcuts_closed" }),
   };
   return { state, actions };
 }

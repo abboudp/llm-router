@@ -30,10 +30,3 @@ export interface ChatResponse {
   model: string | null;
   usage: Usage | null;
 }
-
-export interface Info {
-  name: string;
-  version: string;
-  models: string[];
-  uptime_s: number;
-}
