@@ -45,7 +45,24 @@ class Store:
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA foreign_keys=ON")
         self._conn.executescript(_SCHEMA)
+        self._migrate_pinned_column()
         self._conn.commit()
+
+    def _migrate_pinned_column(self) -> None:
+        """Add the `pinned` column to a pre-existing database.
+
+        `CREATE TABLE IF NOT EXISTS` in `_SCHEMA` is a no-op against a
+        database file created before conversation pinning existed, so a
+        legacy `conversations` table (with no `pinned` column) would
+        otherwise stick around unchanged and every query that references
+        `pinned` (e.g. `list_conversations`'s ORDER BY) would raise
+        `sqlite3.OperationalError: no such column: pinned`. Backfill it here.
+        """
+        columns = {row["name"] for row in self._conn.execute("PRAGMA table_info(conversations)")}
+        if "pinned" not in columns:
+            self._conn.execute(
+                "ALTER TABLE conversations ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0"
+            )
 
     # -- conversations -----------------------------------------------------
 

@@ -14,6 +14,7 @@ export interface AppState {
   pending: boolean;
   settings: Settings;
   error: string | null;
+  failedText: string | null;
   searchQuery: string;
   shortcutsOpen: boolean;
   creatingConversation: boolean;
@@ -26,6 +27,7 @@ export const initialState: AppState = {
   pending: false,
   settings: { maxTokens: 64, model: "default" },
   error: null,
+  failedText: null,
   searchQuery: "",
   shortcutsOpen: false,
   creatingConversation: false,
@@ -36,7 +38,7 @@ export type Action =
   | { type: "selected"; id: string | null; messages: Message[] }
   | { type: "send_started"; userText: string }
   | { type: "send_succeeded"; message: Message; usage: Usage | null }
-  | { type: "send_failed"; error: string }
+  | { type: "send_failed"; error: string; userText: string }
   | { type: "settings_changed"; settings: Partial<Settings> }
   | { type: "error"; error: string }
   | { type: "error_dismissed" }
@@ -44,28 +46,23 @@ export type Action =
   | { type: "shortcuts_opened" }
   | { type: "shortcuts_closed" }
   | { type: "conversation_create_started" }
-  | { type: "conversation_create_finished" }
-  | { type: "retry_requested" };
-
-/**
- * The text to re-send when retrying, or null if the conversation isn't in a
- * retryable state — i.e. the last message isn't an assistant reply directly
- * preceded by the user turn that produced it.
- */
-export function lastRetryableUserText(messages: Message[]): string | null {
-  const last = messages[messages.length - 1];
-  const precedingUser = messages[messages.length - 2];
-  if (!last || last.role !== "assistant") return null;
-  if (!precedingUser || precedingUser.role !== "user") return null;
-  return precedingUser.content;
-}
+  | { type: "conversation_create_finished" };
 
 export function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
     case "conversations_loaded":
       return { ...state, conversations: action.conversations };
     case "selected":
-      return { ...state, selectedId: action.id, messages: action.messages, error: null };
+      return {
+        ...state,
+        selectedId: action.id,
+        messages: action.messages,
+        error: null,
+        // Switching conversations invalidates any pending retry: the
+        // stashed text belonged to whatever conversation was selected when
+        // it failed to send.
+        failedText: null,
+      };
     case "send_started": {
       const optimistic: Message = {
         id: `local-${Date.now()}`,
@@ -75,7 +72,13 @@ export function reducer(state: AppState, action: Action): AppState {
         latency_ms: null,
         created_at: Date.now() / 1000,
       };
-      return { ...state, pending: true, messages: [...state.messages, optimistic] };
+      return {
+        ...state,
+        pending: true,
+        error: null,
+        failedText: null,
+        messages: [...state.messages, optimistic],
+      };
     }
     case "send_succeeded":
       return {
@@ -84,7 +87,17 @@ export function reducer(state: AppState, action: Action): AppState {
         messages: [...state.messages, { ...action.message, usage: action.usage }],
       };
     case "send_failed":
-      return { ...state, pending: false, error: action.error };
+      // A failed send never made it into history server-side, so the
+      // optimistic user message it appended is orphaned — drop it, and
+      // stash its text so the error toast's retry button can re-send it
+      // through the normal send flow.
+      return {
+        ...state,
+        pending: false,
+        error: action.error,
+        failedText: action.userText,
+        messages: state.messages.slice(0, -1),
+      };
     case "settings_changed":
       return { ...state, settings: { ...state.settings, ...action.settings } };
     case "error":
@@ -101,10 +114,6 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, creatingConversation: true };
     case "conversation_create_finished":
       return { ...state, creatingConversation: false };
-    case "retry_requested":
-      // A stale error from the failed attempt shouldn't linger once the
-      // user has asked to try again.
-      return { ...state, error: null };
     default:
       return state;
   }
@@ -121,11 +130,20 @@ const AppContext = createContext<ReturnType<typeof buildValue> | null>(null);
  * stale. `refreshSeqRef` is a simple sequence number: each refresh grabs
  * the next value, and only applies its result if it is still the most
  * recent refresh in flight by the time its response comes back.
+ *
+ * `selectSeqRef` guards `select()` the same way: clicking one conversation
+ * row and then quickly clicking another fires two `listMessages` requests,
+ * and nothing about network timing guarantees they resolve in the order
+ * they were sent. Without this guard, a slow response for the *first*
+ * click could resolve after the second click's `selected` dispatch and
+ * silently replace the newly-selected conversation's messages with the
+ * previous one's.
  */
-function buildValue(
+export function buildValue(
   state: AppState,
   dispatch: React.Dispatch<Action>,
   refreshSeqRef: { current: number },
+  selectSeqRef: { current: number },
 ) {
   const refresh = async (query = state.searchQuery) => {
     const requestId = ++refreshSeqRef.current;
@@ -134,7 +152,10 @@ function buildValue(
     dispatch({ type: "conversations_loaded", conversations });
   };
   const select = async (id: string | null) => {
-    dispatch({ type: "selected", id, messages: id ? await api.listMessages(id) : [] });
+    const requestId = ++selectSeqRef.current;
+    const messages = id ? await api.listMessages(id) : [];
+    if (requestId !== selectSeqRef.current) return; // a newer select has since started
+    dispatch({ type: "selected", id, messages });
   };
   const actions = {
     refresh,
@@ -174,13 +195,16 @@ function buildValue(
         dispatch({ type: "send_succeeded", message: resp.message, usage: resp.usage });
         await refresh(); // titles/order may have changed
       } catch (err) {
-        dispatch({ type: "send_failed", error: (err as Error).message });
+        dispatch({ type: "send_failed", error: (err as Error).message, userText: text });
       }
     },
     retryLast: async () => {
-      const text = lastRetryableUserText(state.messages);
+      // Re-sends the text stashed by the last failed send. Routing this
+      // through the normal `send` flow means `send_started` clears both
+      // `error` and `failedText` as a side effect of starting the new
+      // attempt, and a second failure re-stashes correctly.
+      const text = state.failedText;
       if (!text) return;
-      dispatch({ type: "retry_requested" });
       await actions.send(text);
     },
     setPinned: async (id: string, pinned: boolean) => {
@@ -203,7 +227,8 @@ function buildValue(
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const refreshSeqRef = useRef(0);
-  const value = buildValue(state, dispatch, refreshSeqRef);
+  const selectSeqRef = useRef(0);
+  const value = buildValue(state, dispatch, refreshSeqRef, selectSeqRef);
   const refreshOnce = useCallback(value.actions.refresh, []);
   useEffect(() => {
     void refreshOnce();

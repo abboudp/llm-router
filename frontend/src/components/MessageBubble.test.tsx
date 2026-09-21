@@ -71,36 +71,6 @@ describe("MessageBubble", () => {
     expect(await screen.findByText("Failed")).toBeInTheDocument();
   });
 
-  it("shows the retry button only on the last assistant message", () => {
-    const onRetry = vi.fn();
-    render(<MessageBubble message={message({})} isFinalReply onRetry={onRetry} />);
-    expect(screen.getByTestId("retry-message")).toBeInTheDocument();
-  });
-
-  it("hides the retry button when not the last message", () => {
-    const onRetry = vi.fn();
-    render(<MessageBubble message={message({})} isFinalReply={false} onRetry={onRetry} />);
-    expect(screen.queryByTestId("retry-message")).not.toBeInTheDocument();
-  });
-
-  it("hides the retry button for user messages even if marked last", () => {
-    const onRetry = vi.fn();
-    render(<MessageBubble message={message({ role: "user" })} isFinalReply onRetry={onRetry} />);
-    expect(screen.queryByTestId("retry-message")).not.toBeInTheDocument();
-  });
-
-  it("calls onRetry when the retry button is clicked", () => {
-    const onRetry = vi.fn();
-    render(<MessageBubble message={message({})} isFinalReply onRetry={onRetry} />);
-    fireEvent.click(screen.getByTestId("retry-message"));
-    expect(onRetry).toHaveBeenCalledTimes(1);
-  });
-
-  it("disables the retry button while a send is already pending", () => {
-    render(<MessageBubble message={message({})} isFinalReply onRetry={vi.fn()} retryDisabled />);
-    expect(screen.getByTestId("retry-message")).toBeDisabled();
-  });
-
   it("shows a usage detail toggle when usage is attached, collapsed by default", () => {
     render(
       <MessageBubble

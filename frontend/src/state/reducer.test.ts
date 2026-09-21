@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { initialState, lastRetryableUserText, reducer } from "./store";
+import { initialState, reducer } from "./store";
 
 describe("reducer", () => {
   it("selects a conversation and stores messages", () => {
@@ -38,19 +38,49 @@ describe("reducer", () => {
     expect(s.messages.at(-1)?.usage).toEqual({ prompt_tokens: 12, completion_tokens: 4 });
   });
 
-  it("send failure sets error and unlocks", () => {
+  it("send failure sets the error, unlocks, removes the orphaned optimistic message, and stashes its text", () => {
     let s = reducer(initialState, { type: "selected", id: "c1", messages: [] });
     s = reducer(s, { type: "send_started", userText: "hi" });
-    s = reducer(s, { type: "send_failed", error: "conversation not found" });
+    expect(s.messages).toHaveLength(1);
+    s = reducer(s, { type: "send_failed", error: "conversation not found", userText: "hi" });
     expect(s.pending).toBe(false);
     expect(s.error).toBe("conversation not found");
+    // The optimistic user message never made it into server-side history,
+    // so it's removed rather than left as an orphaned bubble...
+    expect(s.messages).toHaveLength(0);
+    // ...and its text is stashed so the error toast's retry button can
+    // re-send it.
+    expect(s.failedText).toBe("hi");
   });
 
-  it("retry_requested clears a stale error", () => {
-    let s = reducer(initialState, { type: "send_failed", error: "conversation not found" });
+  it("only removes the failed send's own optimistic message, not earlier history", () => {
+    let s = reducer(initialState, {
+      type: "selected",
+      id: "c1",
+      messages: [
+        { id: "m1", conversation_id: "c1", role: "user", content: "earlier", latency_ms: null, created_at: 0 },
+        { id: "m2", conversation_id: "c1", role: "assistant", content: "reply", latency_ms: 5, created_at: 1 },
+      ],
+    });
+    s = reducer(s, { type: "send_started", userText: "second try" });
+    s = reducer(s, { type: "send_failed", error: "boom", userText: "second try" });
+    expect(s.messages.map((m) => m.id)).toEqual(["m1", "m2"]);
+    expect(s.failedText).toBe("second try");
+  });
+
+  it("starting a new send clears any previously stashed failure", () => {
+    let s = reducer(initialState, { type: "send_failed", error: "conversation not found", userText: "hi" });
     expect(s.error).toBe("conversation not found");
-    s = reducer(s, { type: "retry_requested" });
+    expect(s.failedText).toBe("hi");
+    s = reducer(s, { type: "send_started", userText: "hi" });
     expect(s.error).toBeNull();
+    expect(s.failedText).toBeNull();
+  });
+
+  it("selecting a different conversation clears any stashed failure from the previous one", () => {
+    let s = reducer(initialState, { type: "send_failed", error: "conversation not found", userText: "hi" });
+    s = reducer(s, { type: "selected", id: "c2", messages: [] });
+    expect(s.failedText).toBeNull();
   });
 
   it("tracks the search query and the filtered conversation list", () => {
@@ -77,35 +107,5 @@ describe("reducer", () => {
     expect(s.creatingConversation).toBe(true);
     s = reducer(s, { type: "conversation_create_finished" });
     expect(s.creatingConversation).toBe(false);
-  });
-});
-
-describe("lastRetryableUserText", () => {
-  const user = (content: string) =>
-    ({ id: "u", conversation_id: "c1", role: "user" as const, content, latency_ms: null, created_at: 0 });
-  const assistant = (content: string) =>
-    ({ id: "a", conversation_id: "c1", role: "assistant" as const, content, latency_ms: 10, created_at: 1 });
-
-  it("returns null for an empty conversation", () => {
-    expect(lastRetryableUserText([])).toBeNull();
-  });
-
-  it("returns null when the last message is from the user (still pending)", () => {
-    expect(lastRetryableUserText([user("hi")])).toBeNull();
-  });
-
-  it("returns the preceding user text when the last message is an assistant reply", () => {
-    expect(lastRetryableUserText([user("what is a hash map?"), assistant("it's...")])).toBe(
-      "what is a hash map?",
-    );
-  });
-
-  it("only considers the very last exchange, not earlier ones", () => {
-    const messages = [user("first"), assistant("reply one"), user("second"), assistant("reply two")];
-    expect(lastRetryableUserText(messages)).toBe("second");
-  });
-
-  it("returns null if two assistant messages are somehow adjacent", () => {
-    expect(lastRetryableUserText([assistant("one"), assistant("two")])).toBeNull();
   });
 });
