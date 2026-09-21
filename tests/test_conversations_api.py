@@ -86,6 +86,47 @@ def test_create_conversation_with_empty_title_falls_back_to_default():
         assert resp.json()["title"] == "New conversation"
 
 
+def test_new_conversation_is_not_pinned_by_default():
+    with client() as c:
+        resp = c.post("/v1/conversations", json={})
+        assert resp.json()["pinned"] is False
+
+
+def test_pin_and_unpin_a_conversation():
+    with client() as c:
+        cid = c.post("/v1/conversations", json={}).json()["id"]
+
+        pinned = c.patch(f"/v1/conversations/{cid}", json={"pinned": True})
+        assert pinned.status_code == 200
+        assert pinned.json()["pinned"] is True
+
+        unpinned = c.patch(f"/v1/conversations/{cid}", json={"pinned": False})
+        assert unpinned.json()["pinned"] is False
+
+
+def test_pinned_conversations_are_listed_first():
+    with client() as c:
+        older = c.post("/v1/conversations", json={"title": "Older"}).json()["id"]
+        c.post("/v1/conversations", json={"title": "Newer"})
+        c.patch(f"/v1/conversations/{older}", json={"pinned": True})
+
+        listing = c.get("/v1/conversations").json()
+        assert listing[0]["id"] == older
+        assert listing[0]["pinned"] is True
+
+
+def test_update_rejects_empty_body():
+    with client() as c:
+        cid = c.post("/v1/conversations", json={}).json()["id"]
+        resp = c.patch(f"/v1/conversations/{cid}", json={})
+        assert resp.status_code == 422
+
+
+def test_update_unknown_conversation_404():
+    with client() as c:
+        assert c.patch("/v1/conversations/nope", json={"pinned": True}).status_code == 404
+
+
 def test_messages_pagination_limit_and_before_cursor():
     with client() as c:
         cid = c.post("/v1/conversations", json={}).json()["id"]

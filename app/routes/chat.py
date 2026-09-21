@@ -31,7 +31,7 @@ async def chat(body: ChatRequest, request: Request):
                             detail=upstream.get("detail", "upstream error"))
 
     if not history and conversation["title"] == "New conversation":
-        store.rename_conversation(body.conversation_id, body.message[:_AUTO_TITLE_LIMIT])
+        store.update_conversation(body.conversation_id, title=body.message[:_AUTO_TITLE_LIMIT])
 
     store.add_message(body.conversation_id, "user", body.message)
     assistant = store.add_message(

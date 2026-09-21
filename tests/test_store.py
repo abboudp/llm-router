@@ -9,11 +9,12 @@ def test_conversation_crud(tmp_path):
     s = make_store(tmp_path)
     c = s.create_conversation()
     assert c["title"] == "New conversation"
+    assert c["pinned"] is False
     assert s.get_conversation(c["id"])["id"] == c["id"]
 
-    renamed = s.rename_conversation(c["id"], "Renamed")
+    renamed = s.update_conversation(c["id"], title="Renamed")
     assert renamed["title"] == "Renamed"
-    assert s.rename_conversation("nope", "x") is None
+    assert s.update_conversation("nope", title="x") is None
 
     c2 = s.create_conversation(title="Second")
     ids = [row["id"] for row in s.list_conversations()]
@@ -112,6 +113,69 @@ def test_list_messages_before_cursor_pages_backwards(tmp_path):
 
     # an unknown cursor is ignored rather than erroring
     assert [m["id"] for m in s.list_messages(c["id"], before="nope")] == ids
+    s.close()
+
+
+def test_pinned_conversations_sort_before_unpinned(tmp_path):
+    s = make_store(tmp_path)
+    old = s.create_conversation(title="Old, will be pinned")
+    s.create_conversation(title="Newer, unpinned")
+
+    # Before pinning, recency order puts "old" last.
+    assert [c["id"] for c in s.list_conversations()][-1] == old["id"]
+
+    pinned = s.update_conversation(old["id"], pinned=True)
+    assert pinned["pinned"] is True
+
+    # After pinning, it floats to the top despite being older.
+    ordered = s.list_conversations()
+    assert ordered[0]["id"] == old["id"]
+    assert ordered[0]["pinned"] is True
+    assert ordered[1]["pinned"] is False
+    s.close()
+
+
+def test_multiple_pinned_conversations_still_order_by_recency_within_the_group(tmp_path):
+    s = make_store(tmp_path)
+    first = s.create_conversation(title="First")
+    second = s.create_conversation(title="Second")
+    s.update_conversation(first["id"], pinned=True)
+    s.update_conversation(second["id"], pinned=True)
+
+    ordered = [c["id"] for c in s.list_conversations()]
+    # Both pinned; `second` was created (and thus last updated) more
+    # recently, so it stays on top of the pinned group.
+    assert ordered == [second["id"], first["id"]]
+    s.close()
+
+
+def test_pinning_does_not_bump_updated_at(tmp_path):
+    s = make_store(tmp_path)
+    c = s.create_conversation()
+    before = s.get_conversation(c["id"])["updated_at"]
+
+    s.update_conversation(c["id"], pinned=True)
+
+    after = s.get_conversation(c["id"])["updated_at"]
+    assert after == before
+    s.close()
+
+
+def test_update_conversation_can_set_title_and_pinned_together(tmp_path):
+    s = make_store(tmp_path)
+    c = s.create_conversation()
+    updated = s.update_conversation(c["id"], title="Renamed and pinned", pinned=True)
+    assert updated["title"] == "Renamed and pinned"
+    assert updated["pinned"] is True
+    s.close()
+
+
+def test_update_conversation_with_no_fields_is_a_no_op(tmp_path):
+    s = make_store(tmp_path)
+    c = s.create_conversation(title="Untouched")
+    result = s.update_conversation(c["id"])
+    assert result["title"] == "Untouched"
+    assert result["pinned"] is False
     s.close()
 
 
