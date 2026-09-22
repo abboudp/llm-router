@@ -36,6 +36,11 @@ async def generate(req: GenerateRequest):
     return JSONResponse(status_code=status, content=body)
 
 
+@app.get("/v1/upstreams")
+async def upstreams():
+    return app.state.pool.stats()
+
+
 app.include_router(conversations_router)
 app.include_router(chat_router)
 app.include_router(info_router)
