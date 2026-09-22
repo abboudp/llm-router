@@ -34,7 +34,7 @@ def test_round_robin_and_passthrough():
     pool = UpstreamPool(urls=urls, transport=_recording_transport(hits))
 
     async def run():
-        results = [await pool.forward({"prompt": "p"}) for _ in range(4)]
+        results = [await pool.forward({"prompt": f"p{i}"}) for i in range(4)]
         await pool.aclose()
         return results
 
