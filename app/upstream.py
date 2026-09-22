@@ -22,7 +22,7 @@ class UpstreamPool:
                  max_hedges: int | None = None, timeout: float = 10.0):
         self._replicas = [_Replica(url) for url in (urls or upstream_urls())]
         if hedge_after is None:
-            hedge_after = float(os.getenv("LLM_HEDGE_AFTER_MS", "200")) / 1000
+            hedge_after = float(os.getenv("LLM_HEDGE_AFTER_MS", "150")) / 1000
         if max_hedges is None:
             max_hedges = int(os.getenv("LLM_MAX_HEDGES", "2"))
         self._hedge_after = hedge_after
