@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from .cache import ResponseCache
 from .middleware.logging import RequestLogMiddleware
 from .routes.chat import router as chat_router
 from .routes.conversations import router as conversations_router
@@ -20,6 +21,10 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.pool = UpstreamPool()
+    app.state.cache = ResponseCache(
+        max_entries=int(os.environ.get("CACHE_MAX_ENTRIES", "1024")),
+        ttl_s=float(os.environ.get("CACHE_TTL_S", "300")),
+    )
     app.state.store = Store(os.environ.get("APP_DB_PATH", "data/app.db"))
     yield
     await app.state.pool.aclose()
@@ -32,8 +37,21 @@ app.add_middleware(RequestLogMiddleware)
 
 @app.post("/v1/generate")
 async def generate(req: GenerateRequest):
-    status, body = await app.state.pool.forward(req.model_dump())
+    payload = req.model_dump()
+    cache: ResponseCache = app.state.cache
+    key = cache.key(payload)
+    body = cache.get(key)
+    if body is not None:
+        return JSONResponse(status_code=200, content=body)
+    status, body = await app.state.pool.forward(payload)
+    if status == 200:
+        cache.put(key, body)
     return JSONResponse(status_code=status, content=body)
+
+
+@app.get("/v1/upstreams")
+async def upstreams():
+    return {**app.state.pool.stats(), "cache": app.state.cache.stats()}
 
 
 app.include_router(conversations_router)
