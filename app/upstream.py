@@ -8,9 +8,12 @@ import httpx
 
 from .config import (
     upstream_ewma_alpha,
+    upstream_failure_penalty,
     upstream_final_timeout_s,
+    upstream_inflight_weight,
     upstream_max_retries,
     upstream_probe_fraction,
+    upstream_retry_slow_factor,
     upstream_timeout_s,
     upstream_urls,
 )
@@ -25,8 +28,8 @@ class UpstreamState:
     inflight: int = 0
     samples: int = 0
 
-    def score(self) -> float:
-        return self.ewma_ms * (self.inflight + 1)
+    def score(self, inflight_weight: float) -> float:
+        return self.ewma_ms * (1 + self.inflight * inflight_weight)
 
 
 def _json_or_error(resp: httpx.Response) -> dict:
@@ -37,7 +40,11 @@ def _json_or_error(resp: httpx.Response) -> dict:
 
 
 class UpstreamPool:
-    """Selects upstreams by latency, inflight load, and occasional probes."""
+    """Selects by EWMA latency with lightly weighted inflight load.
+
+    Failures receive a latency penalty, first attempts can probe, and retries
+    prefer an untried upstream unless it is much slower than the best target.
+    """
 
     def __init__(
         self,
@@ -49,6 +56,9 @@ class UpstreamPool:
         ewma_alpha: float | None = None,
         probe_fraction: float | None = None,
         final_timeout_s: float | None = None,
+        inflight_weight: float | None = None,
+        failure_penalty: float | None = None,
+        retry_slow_factor: float | None = None,
         rng: random.Random | None = None,
     ):
         self._timeout_s = (
@@ -70,6 +80,21 @@ class UpstreamPool:
             if final_timeout_s is None
             else final_timeout_s
         )
+        self._inflight_weight = (
+            upstream_inflight_weight()
+            if inflight_weight is None
+            else inflight_weight
+        )
+        self._failure_penalty = (
+            upstream_failure_penalty()
+            if failure_penalty is None
+            else failure_penalty
+        )
+        self._retry_slow_factor = (
+            upstream_retry_slow_factor()
+            if retry_slow_factor is None
+            else retry_slow_factor
+        )
         self._upstreams: list[UpstreamState] = [
             UpstreamState(url) for url in (urls or upstream_urls())
         ]
@@ -84,22 +109,29 @@ class UpstreamPool:
             for u in self._upstreams
         ]
 
-    def _select(
-        self, exclude: set[str], allow_probe: bool
-    ) -> UpstreamState | None:
-        candidates = [u for u in self._upstreams if u.url not in exclude]
-        if not candidates:
+    def _select(self, tried: set[str], attempt: int) -> UpstreamState | None:
+        if not self._upstreams:
             return None
-        if allow_probe:
-            cold = [u for u in candidates if u.samples == 0]
+        score = lambda u: u.score(self._inflight_weight)
+        if attempt == 0:
+            cold = [u for u in self._upstreams if u.samples == 0]
             if cold:
                 return cold[0]
             if (
-                len(candidates) > 1
+                len(self._upstreams) > 1
                 and self._rng.random() < self._probe_fraction
             ):
-                return self._rng.choice(candidates)
-        return min(candidates, key=UpstreamState.score)
+                return self._rng.choice(self._upstreams)
+            return min(self._upstreams, key=score)
+        best_any = min(self._upstreams, key=score)
+        untried = [u for u in self._upstreams if u.url not in tried]
+        if untried:
+            best_untried = min(untried, key=score)
+            if best_untried.score(self._inflight_weight) <= (
+                best_any.score(self._inflight_weight) * self._retry_slow_factor
+            ):
+                return best_untried
+        return best_any
 
     def _record(self, u: UpstreamState, elapsed_ms: float) -> None:
         u.ewma_ms = (
@@ -114,7 +146,7 @@ class UpstreamPool:
         tried: set[str] = set()
         last: tuple[int, dict] | None = None
         for attempt in range(self._max_retries + 1):
-            u = self._select(tried, allow_probe=attempt == 0)
+            u = self._select(tried, attempt)
             if u is None:
                 break
             tried.add(u.url)
@@ -123,6 +155,7 @@ class UpstreamPool:
             deadline = self._timeout_s
             if attempt == self._max_retries and attempt > 0:
                 deadline = max(self._timeout_s, self._final_timeout_s)
+            penalty_ms = self._timeout_s * 1000 * self._failure_penalty
             try:
                 try:
                     resp = await asyncio.wait_for(
@@ -134,7 +167,7 @@ class UpstreamPool:
                         timeout=deadline,
                     )
                 except (httpx.TimeoutException, asyncio.TimeoutError):
-                    self._record(u, deadline * 1000 * 2)
+                    self._record(u, penalty_ms)
                     last = (504, {"error": "upstream timeout"})
                     log.warning(
                         "upstream %s timed out (attempt %d)",
@@ -143,7 +176,7 @@ class UpstreamPool:
                     )
                     continue
                 except httpx.TransportError:
-                    self._record(u, self._timeout_s * 1000 * 2)
+                    self._record(u, penalty_ms)
                     last = (502, {"error": "upstream unavailable"})
                     log.warning(
                         "upstream %s unavailable (attempt %d)",
@@ -153,9 +186,7 @@ class UpstreamPool:
                     continue
                 elapsed_ms = (time.perf_counter() - start) * 1000
                 if resp.status_code >= 500:
-                    self._record(
-                        u, max(elapsed_ms, self._timeout_s * 1000 * 2)
-                    )
+                    self._record(u, max(elapsed_ms, penalty_ms))
                     last = (resp.status_code, _json_or_error(resp))
                     log.warning(
                         "upstream %s returned %d (attempt %d)",

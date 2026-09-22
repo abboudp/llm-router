@@ -41,8 +41,20 @@ def upstream_ewma_alpha() -> float:
 
 
 def upstream_probe_fraction() -> float:
-    return _env_float("LLM_UPSTREAM_PROBE_FRACTION", 0.02)
+    return _env_float("LLM_UPSTREAM_PROBE_FRACTION", 0.01)
 
 
 def upstream_final_timeout_s() -> float:
     return _env_float("LLM_UPSTREAM_FINAL_TIMEOUT_S", 5.0)
+
+
+def upstream_inflight_weight() -> float:
+    return _env_float("LLM_UPSTREAM_INFLIGHT_WEIGHT", 0.1)
+
+
+def upstream_failure_penalty() -> float:
+    return _env_float("LLM_UPSTREAM_FAILURE_PENALTY", 10.0)
+
+
+def upstream_retry_slow_factor() -> float:
+    return _env_float("LLM_UPSTREAM_RETRY_SLOW_FACTOR", 3.0)

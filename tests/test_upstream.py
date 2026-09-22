@@ -4,9 +4,12 @@ import httpx
 
 from app.config import (
     upstream_ewma_alpha,
+    upstream_failure_penalty,
     upstream_final_timeout_s,
+    upstream_inflight_weight,
     upstream_max_retries,
     upstream_probe_fraction,
+    upstream_retry_slow_factor,
     upstream_timeout_s,
     upstream_urls,
 )
@@ -34,13 +37,19 @@ def test_upstream_settings_default(monkeypatch):
         "LLM_UPSTREAM_EWMA_ALPHA",
         "LLM_UPSTREAM_PROBE_FRACTION",
         "LLM_UPSTREAM_FINAL_TIMEOUT_S",
+        "LLM_UPSTREAM_INFLIGHT_WEIGHT",
+        "LLM_UPSTREAM_FAILURE_PENALTY",
+        "LLM_UPSTREAM_RETRY_SLOW_FACTOR",
     ):
         monkeypatch.delenv(name, raising=False)
     assert upstream_timeout_s() == 0.2
     assert upstream_max_retries() == 2
     assert upstream_ewma_alpha() == 0.3
-    assert upstream_probe_fraction() == 0.02
+    assert upstream_probe_fraction() == 0.01
     assert upstream_final_timeout_s() == 5.0
+    assert upstream_inflight_weight() == 0.1
+    assert upstream_failure_penalty() == 10.0
+    assert upstream_retry_slow_factor() == 3.0
 
 
 def test_upstream_settings_env(monkeypatch):
@@ -49,11 +58,17 @@ def test_upstream_settings_env(monkeypatch):
     monkeypatch.setenv("LLM_UPSTREAM_EWMA_ALPHA", "0.7")
     monkeypatch.setenv("LLM_UPSTREAM_PROBE_FRACTION", "0.2")
     monkeypatch.setenv("LLM_UPSTREAM_FINAL_TIMEOUT_S", "1.5")
+    monkeypatch.setenv("LLM_UPSTREAM_INFLIGHT_WEIGHT", "0.4")
+    monkeypatch.setenv("LLM_UPSTREAM_FAILURE_PENALTY", "8")
+    monkeypatch.setenv("LLM_UPSTREAM_RETRY_SLOW_FACTOR", "2.5")
     assert upstream_timeout_s() == 0.1
     assert upstream_max_retries() == 4
     assert upstream_ewma_alpha() == 0.7
     assert upstream_probe_fraction() == 0.2
     assert upstream_final_timeout_s() == 1.5
+    assert upstream_inflight_weight() == 0.4
+    assert upstream_failure_penalty() == 8.0
+    assert upstream_retry_slow_factor() == 2.5
 
 
 def _transport(handler) -> httpx.MockTransport:
@@ -135,6 +150,7 @@ def test_timeout_retries_on_different_upstream():
             urls=urls,
             transport=_transport(handler),
             timeout_s=0.05,
+            failure_penalty=10,
             probe_fraction=0,
         )
         try:
@@ -146,7 +162,7 @@ def test_timeout_retries_on_different_upstream():
     result, stats = asyncio.run(run())
     assert hits == urls
     assert result == (200, {"completion": "ok"})
-    assert stats[0].ewma_ms == 100
+    assert stats[0].ewma_ms == 0.05 * 1000 * 10
     assert stats[0].inflight == 0
 
 
@@ -387,6 +403,121 @@ def test_retries_do_not_probe():
 
     assert asyncio.run(run()) == (200, {"completion": "ok"})
     assert hits == ["http://u4:9000", "http://u1:9000"]
+
+
+def test_idle_slow_upstream_not_preferred_over_busy_healthy_one():
+    async def handler(request: httpx.Request) -> httpx.Response:
+        host = _url(request)
+        hits.append(host)
+        if host == "http://u1:9000":
+            await asyncio.sleep(0.01)
+        else:
+            await asyncio.sleep(0.5)
+        return httpx.Response(200, json={"completion": "ok"})
+
+    hits: list[str] = []
+
+    async def run():
+        pool = UpstreamPool(
+            urls=["http://u1:9000", "http://u2:9000"],
+            transport=_transport(handler),
+            timeout_s=0.05,
+            final_timeout_s=0.05,
+            max_retries=0,
+            probe_fraction=0,
+            failure_penalty=10,
+        )
+        try:
+            await pool.forward({"prompt": "warm"})
+            await pool.forward({"prompt": "warm"})
+            hits.clear()
+            return await asyncio.gather(
+                *(pool.forward({"prompt": "p"}) for _ in range(10))
+            )
+        finally:
+            await pool.aclose()
+
+    results = asyncio.run(run())
+    assert all(result == (200, {"completion": "ok"}) for result in results)
+    assert "http://u2:9000" not in hits
+
+
+def test_retry_reuses_best_upstream_when_others_are_much_slower():
+    fail_u1 = False
+    hits: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal fail_u1
+        host = _url(request)
+        hits.append(host)
+        if host == "http://u2:9000":
+            await asyncio.sleep(0.5)
+        elif fail_u1:
+            fail_u1 = False
+            return httpx.Response(500, json={"error": "x"})
+        return httpx.Response(200, json={"completion": "ok"})
+
+    async def run():
+        nonlocal fail_u1
+        pool = UpstreamPool(
+            urls=["http://u1:9000", "http://u2:9000"],
+            transport=_transport(handler),
+            timeout_s=0.05,
+            final_timeout_s=0.05,
+            max_retries=1,
+            probe_fraction=0,
+            failure_penalty=10,
+            retry_slow_factor=3,
+        )
+        try:
+            await pool.forward({"prompt": "warm"})
+            await pool.forward({"prompt": "warm"})
+            fail_u1 = True
+            hits.clear()
+            return await pool.forward({"prompt": "p"})
+        finally:
+            await pool.aclose()
+
+    assert asyncio.run(run()) == (200, {"completion": "ok"})
+    assert hits == ["http://u1:9000", "http://u1:9000"]
+
+
+def test_retry_uses_different_upstream_when_comparable():
+    calls = {"u1": 0}
+    hits: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        host = _url(request)
+        hits.append(host)
+        if host == "http://u2:9000":
+            await asyncio.sleep(0.01)
+        else:
+            calls["u1"] += 1
+            if calls["u1"] == 2:
+                return httpx.Response(500, json={"error": "x"})
+        return httpx.Response(200, json={"completion": "ok"})
+
+    async def run():
+        pool = UpstreamPool(
+            urls=["http://u1:9000", "http://u2:9000"],
+            transport=_transport(handler),
+            timeout_s=0.05,
+            final_timeout_s=0.05,
+            max_retries=1,
+            probe_fraction=0,
+            failure_penalty=10,
+            retry_slow_factor=3,
+        )
+        try:
+            await pool.forward({"prompt": "warm"})
+            await pool.forward({"prompt": "warm"})
+            hits.clear()
+            return await pool.forward({"prompt": "p"})
+        finally:
+            await pool.aclose()
+
+    assert asyncio.run(run()) == (200, {"completion": "ok"})
+    assert hits == ["http://u1:9000", "http://u2:9000"]
 
 
 def test_inflight_score_spreads_concurrent_load():
