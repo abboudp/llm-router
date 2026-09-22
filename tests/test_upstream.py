@@ -35,7 +35,7 @@ def test_upstream_latency_config_defaults(monkeypatch):
         "LLM_CACHE_MAX",
     ):
         monkeypatch.delenv(name, raising=False)
-    assert hedge_delay_ms() == 300
+    assert hedge_delay_ms() == 200
     assert probe_every() == 50
     assert cache_ttl_s() == 300
     assert cache_max() == 2048

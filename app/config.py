@@ -9,7 +9,7 @@ def upstream_urls() -> list[str]:
 
 
 def hedge_delay_ms() -> int:
-    return int(os.environ.get("LLM_HEDGE_DELAY_MS", "300"))
+    return int(os.environ.get("LLM_HEDGE_DELAY_MS", "200"))
 
 
 def probe_every() -> int:
