@@ -28,7 +28,7 @@ def _recording_transport(hits: list[str]) -> httpx.MockTransport:
     return httpx.MockTransport(handler)
 
 
-def test_round_robin_and_passthrough():
+def test_probes_all_replicas_first_and_passes_through():
     hits: list[str] = []
     urls = ["http://u1:9000", "http://u2:9000", "http://u3:9000"]
     pool = UpstreamPool(urls=urls, transport=_recording_transport(hits))
@@ -39,5 +39,104 @@ def test_round_robin_and_passthrough():
         return results
 
     results = asyncio.run(run())
-    assert hits == ["http://u1:9000", "http://u2:9000", "http://u3:9000", "http://u1:9000"]
-    assert all(r == (200, {"completion": "ok"}) for r in results)
+    assert hits[:3] == ["http://u1:9000", "http://u2:9000", "http://u3:9000"]
+    assert results == [(200, {"completion": "ok"})] * 4
+
+
+def test_avoids_slow_replica():
+    hits: list[str] = []
+    urls = ["http://u1:9000", "http://u2:9000", "http://u3:9000"]
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        url = f"{request.url.scheme}://{request.url.host}:{request.url.port}"
+        hits.append(url)
+        if url == "http://u3:9000":
+            await asyncio.sleep(0.3)
+        return httpx.Response(200, json={"completion": "ok"})
+
+    pool = UpstreamPool(
+        urls=urls, transport=httpx.MockTransport(handler), hedge_after=1.0
+    )
+
+    async def run():
+        for _ in range(23):
+            assert await pool.forward({"prompt": "p"}) == (
+                200, {"completion": "ok"}
+            )
+        await pool.aclose()
+
+    asyncio.run(run())
+    assert hits.count("http://u3:9000") <= 2
+
+
+def test_hedges_stalled_primary():
+    hits: list[str] = []
+    urls = ["http://u1:9000", "http://u2:9000", "http://u3:9000"]
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        url = f"{request.url.scheme}://{request.url.host}:{request.url.port}"
+        hits.append(url)
+        if url == "http://u1:9000":
+            await asyncio.sleep(2)
+        return httpx.Response(200, json={"completion": "ok"})
+
+    pool = UpstreamPool(
+        urls=urls, transport=httpx.MockTransport(handler), hedge_after=0.05
+    )
+
+    async def run():
+        started = asyncio.get_running_loop().time()
+        result = await pool.forward({"prompt": "p"})
+        elapsed = asyncio.get_running_loop().time() - started
+        await pool.aclose()
+        return result, elapsed
+
+    result, elapsed = asyncio.run(run())
+    assert result == (200, {"completion": "ok"})
+    assert elapsed < 1
+    assert "http://u2:9000" in hits
+
+
+def test_non_2xx_primary_waits_for_hedge_success():
+    hits: list[str] = []
+    urls = ["http://u1:9000", "http://u2:9000", "http://u3:9000"]
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        url = f"{request.url.scheme}://{request.url.host}:{request.url.port}"
+        hits.append(url)
+        if url == "http://u2:9000":
+            await asyncio.sleep(0.1)
+            return httpx.Response(200, json={"completion": "ok"})
+        return httpx.Response(500, json={"error": "failed"})
+
+    pool = UpstreamPool(
+        urls=urls, transport=httpx.MockTransport(handler), hedge_after=0.01
+    )
+
+    async def run():
+        result = await pool.forward({"prompt": "p"})
+        await pool.aclose()
+        return result
+
+    assert asyncio.run(run()) == (200, {"completion": "ok"})
+
+
+def test_all_fail_returns_error_not_exception():
+    urls = ["http://u1:9000", "http://u2:9000", "http://u3:9000"]
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("failed", request=request)
+
+    pool = UpstreamPool(
+        urls=urls,
+        transport=httpx.MockTransport(handler),
+        hedge_after=0.01,
+        max_hedges=2,
+    )
+
+    async def run():
+        result = await pool.forward({"prompt": "p"})
+        await pool.aclose()
+        return result
+
+    assert asyncio.run(run()) == (502, {"error": "upstream unavailable"})
