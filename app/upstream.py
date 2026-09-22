@@ -11,7 +11,7 @@ import httpx
 from .config import cache_max as configured_cache_max
 from .config import cache_ttl_s as configured_cache_ttl_s
 from .config import hedge_delay_ms as configured_hedge_delay_ms
-from .config import slow_delta_ms as configured_slow_delta_ms
+from .config import probe_every as configured_probe_every
 from .config import upstream_urls
 
 logger = logging.getLogger("llm-router.upstream")
@@ -23,8 +23,6 @@ class _Replica:
     ewma_ms: float = 0.0
     inflight: int = 0
     failures: int = 0
-    last_used: int = 0
-    degraded: bool = False
 
 
 class UpstreamPool:
@@ -34,19 +32,18 @@ class UpstreamPool:
         transport: httpx.AsyncBaseTransport | None = None,
         *,
         hedge_delay_ms: int | None = None,
-        slow_delta_ms: int | None = None,
+        probe_every: int | None = None,
         cache_ttl_s: int | None = None,
         cache_max: int | None = None,
     ):
         self._replicas = [_Replica(url) for url in (urls or upstream_urls())]
         self._rr_index = 0
         self._request_count = 0
-        self._usage_count = 0
         self._hedge_delay_ms = (
             configured_hedge_delay_ms() if hedge_delay_ms is None else hedge_delay_ms
         )
-        self._slow_delta_ms = (
-            configured_slow_delta_ms() if slow_delta_ms is None else slow_delta_ms
+        self._probe_every = (
+            configured_probe_every() if probe_every is None else probe_every
         )
         self._cache_ttl_s = (
             configured_cache_ttl_s() if cache_ttl_s is None else cache_ttl_s
@@ -54,6 +51,7 @@ class UpstreamPool:
         self._cache_max = configured_cache_max() if cache_max is None else cache_max
         self._cache: OrderedDict[str, tuple[int, dict, float]] = OrderedDict()
         self._singleflight: dict[str, asyncio.Future[tuple[int, dict]]] = {}
+        self._probes: set[asyncio.Task[tuple[int, dict]]] = set()
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(None, connect=5.0),
             limits=httpx.Limits(max_connections=200, max_keepalive_connections=100),
@@ -97,6 +95,12 @@ class UpstreamPool:
                 del self._singleflight[key]
 
     async def aclose(self) -> None:
+        for task in self._probes:
+            if not task.done():
+                task.cancel()
+        if self._probes:
+            await asyncio.gather(*self._probes, return_exceptions=True)
+            self._probes.clear()
         await self._client.aclose()
 
     async def _forward_uncached(self, payload: dict) -> tuple[int, dict]:
@@ -105,20 +109,15 @@ class UpstreamPool:
 
         self._request_count += 1
         candidates = self._candidates()
+        self._start_probe(payload)
         return await self._run_candidates(candidates, payload)
 
     def _candidates(self) -> list[_Replica]:
         start = self._rr_index % len(self._replicas)
         self._rr_index += 1
         rotated = self._replicas[start:] + self._replicas[:start]
-        non_degraded = [replica for replica in rotated if not replica.degraded]
-        non_degraded.sort(key=lambda replica: replica.inflight)
-        degraded = [replica for replica in rotated if replica.degraded]
-
-        if degraded and self._request_count % 20 == 0:
-            probe = min(degraded, key=lambda replica: replica.last_used)
-            return [probe] + [replica for replica in non_degraded + degraded if replica is not probe]
-        return non_degraded + degraded
+        rotated.sort(key=lambda replica: int(replica.ewma_ms // 50))
+        return rotated
 
     async def _run_candidates(
         self, candidates: list[_Replica], payload: dict
@@ -136,7 +135,7 @@ class UpstreamPool:
         try:
             while active:
                 timeout = None
-                if len(active) == 1 and next_candidate < len(candidates):
+                if next_candidate < len(candidates):
                     timeout = max(self._hedge_delay_ms, 0) / 1000
                 done, _ = await asyncio.wait(
                     active, timeout=timeout, return_when=asyncio.FIRST_COMPLETED
@@ -165,7 +164,7 @@ class UpstreamPool:
                     await self._cancel_tasks(active)
                     return winner
 
-                if next_candidate < len(candidates) and len(active) < 2:
+                if next_candidate < len(candidates):
                     start(candidates[next_candidate])
                     next_candidate += 1
 
@@ -182,8 +181,7 @@ class UpstreamPool:
     async def _attempt(self, replica: _Replica, payload: dict) -> tuple[int, dict]:
         started = time.perf_counter()
         replica.inflight += 1
-        self._usage_count += 1
-        replica.last_used = self._usage_count
+        record_sample = False
         failed = False
         try:
             async with self._client.stream(
@@ -192,43 +190,47 @@ class UpstreamPool:
                 await response.aread()
                 status = response.status_code
                 body = response.json()
+                record_sample = True
                 failed = status >= 500
                 return status, body
         except asyncio.CancelledError:
             raise
         except Exception:
+            record_sample = True
             failed = True
             raise
         finally:
             replica.inflight -= 1
-            if failed:
-                replica.failures += 1
-            elapsed_ms = (time.perf_counter() - started) * 1000
-            replica.ewma_ms = (
-                elapsed_ms
-                if replica.ewma_ms == 0
-                else 0.8 * replica.ewma_ms + 0.2 * elapsed_ms
-            )
-            self._refresh_degraded()
-
-    def _refresh_degraded(self) -> None:
-        measured = [replica.ewma_ms for replica in self._replicas if replica.ewma_ms > 0]
-        if not measured:
-            return
-        minimum = min(measured)
-        for replica in self._replicas:
-            new_state = (
-                replica.ewma_ms > 0
-                and replica.ewma_ms - minimum > self._slow_delta_ms
-            )
-            if new_state != replica.degraded:
-                logger.info(
-                    "replica %s degraded=%s ewma_ms=%.1f",
-                    replica.url,
-                    new_state,
-                    replica.ewma_ms,
+            if record_sample:
+                if failed:
+                    replica.failures += 1
+                elapsed_ms = (time.perf_counter() - started) * 1000
+                replica.ewma_ms = (
+                    elapsed_ms
+                    if replica.ewma_ms == 0
+                    else 0.8 * replica.ewma_ms + 0.2 * elapsed_ms
                 )
-                replica.degraded = new_state
+
+    def _start_probe(self, payload: dict) -> None:
+        if (
+            self._probe_every <= 0
+            or self._request_count % self._probe_every != 0
+            or not self._replicas
+        ):
+            return
+        slowest = max(self._replicas, key=lambda replica: replica.ewma_ms)
+        if slowest.ewma_ms <= 0:
+            return
+        task = asyncio.create_task(self._attempt(slowest, payload))
+        self._probes.add(task)
+        task.add_done_callback(self._probe_done)
+        logger.debug("probe fired for %s", slowest.url)
+
+    def _probe_done(self, task: asyncio.Task[tuple[int, dict]]) -> None:
+        self._probes.discard(task)
+        if not task.cancelled():
+            with suppress(Exception):
+                task.exception()
 
     async def _cancel_tasks(
         self, tasks: dict[asyncio.Task[tuple[int, dict]], _Replica]

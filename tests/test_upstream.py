@@ -7,7 +7,7 @@ from app.config import (
     cache_max,
     cache_ttl_s,
     hedge_delay_ms,
-    slow_delta_ms,
+    probe_every,
     upstream_urls,
 )
 from app.upstream import UpstreamPool
@@ -30,24 +30,24 @@ def test_upstream_urls_env(monkeypatch):
 def test_upstream_latency_config_defaults(monkeypatch):
     for name in (
         "LLM_HEDGE_DELAY_MS",
-        "LLM_SLOW_DELTA_MS",
+        "LLM_PROBE_EVERY",
         "LLM_CACHE_TTL_S",
         "LLM_CACHE_MAX",
     ):
         monkeypatch.delenv(name, raising=False)
     assert hedge_delay_ms() == 300
-    assert slow_delta_ms() == 250
+    assert probe_every() == 50
     assert cache_ttl_s() == 300
     assert cache_max() == 2048
 
 
 def test_upstream_latency_config_env(monkeypatch):
     monkeypatch.setenv("LLM_HEDGE_DELAY_MS", "17")
-    monkeypatch.setenv("LLM_SLOW_DELTA_MS", "23")
+    monkeypatch.setenv("LLM_PROBE_EVERY", "23")
     monkeypatch.setenv("LLM_CACHE_TTL_S", "41")
     monkeypatch.setenv("LLM_CACHE_MAX", "59")
     assert hedge_delay_ms() == 17
-    assert slow_delta_ms() == 23
+    assert probe_every() == 23
     assert cache_ttl_s() == 41
     assert cache_max() == 59
 
@@ -104,6 +104,35 @@ def test_hedge_wins_over_stalled_primary():
     assert hits == ["u1", "u2"]
 
 
+def test_third_hedge_fires_when_two_stall():
+    hits: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        hits.append(request.url.host)
+        if request.url.host in {"u1", "u2"}:
+            await asyncio.sleep(1.0)
+        return httpx.Response(200, json={"completion": request.url.host})
+
+    pool = UpstreamPool(
+        urls=["http://u1:9000", "http://u2:9000", "http://u3:9000"],
+        transport=httpx.MockTransport(handler),
+        hedge_delay_ms=50,
+        cache_ttl_s=0,
+    )
+
+    async def run():
+        started = time.perf_counter()
+        result = await pool.forward({"prompt": "p", "max_tokens": 1})
+        elapsed = time.perf_counter() - started
+        await pool.aclose()
+        return result, elapsed
+
+    result, elapsed = asyncio.run(run())
+    assert result == (200, {"completion": "u3"})
+    assert elapsed < 0.5
+    assert hits == ["u1", "u2", "u3"]
+
+
 def test_no_hedge_when_primary_is_fast():
     hits: list[str] = []
 
@@ -131,7 +160,7 @@ def test_no_hedge_when_primary_is_fast():
     assert all(status == 200 for status, _ in results)
 
 
-def test_degraded_replica_is_deprioritized():
+def test_slow_replica_is_ordered_last():
     hits: list[str] = []
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -144,13 +173,13 @@ def test_degraded_replica_is_deprioritized():
         urls=["http://u1:9000", "http://u2:9000", "http://u3:9000"],
         transport=httpx.MockTransport(handler),
         hedge_delay_ms=10_000,
-        slow_delta_ms=100,
+        probe_every=1000,
         cache_ttl_s=0,
     )
 
     async def run():
         elapsed: list[float] = []
-        for index in range(12):
+        for index in range(9):
             started = time.perf_counter()
             await pool.forward({"prompt": f"p-{index}", "max_tokens": 1})
             elapsed.append(time.perf_counter() - started)
@@ -158,8 +187,41 @@ def test_degraded_replica_is_deprioritized():
         return elapsed
 
     elapsed = asyncio.run(run())
-    assert hits.count("u1") <= 2
+    assert hits.count("u1") == 1
     assert all(duration < 0.2 for duration in elapsed[-6:])
+
+
+def test_probe_refreshes_slow_replica_in_background():
+    hits: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        hits.append(request.url.host)
+        if request.url.host == "u1":
+            await asyncio.sleep(0.4)
+        return httpx.Response(200, json={"completion": request.url.host})
+
+    pool = UpstreamPool(
+        urls=["http://u1:9000", "http://u2:9000", "http://u3:9000"],
+        transport=httpx.MockTransport(handler),
+        hedge_delay_ms=10_000,
+        probe_every=3,
+        cache_ttl_s=0,
+    )
+
+    async def run():
+        elapsed: list[float] = []
+        for index in range(6):
+            started = time.perf_counter()
+            await pool.forward({"prompt": f"p-{index}", "max_tokens": 1})
+            elapsed.append(time.perf_counter() - started)
+        await asyncio.sleep(0.5)
+        await pool.aclose()
+        return elapsed
+
+    elapsed = asyncio.run(run())
+    assert hits.count("u1") >= 2
+    assert elapsed[0] >= 0.2
+    assert all(duration < 0.2 for duration in elapsed[1:])
 
 
 def test_transport_error_fails_over_immediately():

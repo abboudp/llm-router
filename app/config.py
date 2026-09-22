@@ -12,8 +12,8 @@ def hedge_delay_ms() -> int:
     return int(os.environ.get("LLM_HEDGE_DELAY_MS", "300"))
 
 
-def slow_delta_ms() -> int:
-    return int(os.environ.get("LLM_SLOW_DELTA_MS", "250"))
+def probe_every() -> int:
+    return int(os.environ.get("LLM_PROBE_EVERY", "50"))
 
 
 def cache_ttl_s() -> int:
