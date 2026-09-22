@@ -4,6 +4,7 @@ import httpx
 
 from app.config import (
     upstream_ewma_alpha,
+    upstream_final_timeout_s,
     upstream_max_retries,
     upstream_probe_fraction,
     upstream_timeout_s,
@@ -32,12 +33,14 @@ def test_upstream_settings_default(monkeypatch):
         "LLM_UPSTREAM_MAX_RETRIES",
         "LLM_UPSTREAM_EWMA_ALPHA",
         "LLM_UPSTREAM_PROBE_FRACTION",
+        "LLM_UPSTREAM_FINAL_TIMEOUT_S",
     ):
         monkeypatch.delenv(name, raising=False)
-    assert upstream_timeout_s() == 0.25
+    assert upstream_timeout_s() == 0.2
     assert upstream_max_retries() == 2
     assert upstream_ewma_alpha() == 0.3
-    assert upstream_probe_fraction() == 0.05
+    assert upstream_probe_fraction() == 0.02
+    assert upstream_final_timeout_s() == 5.0
 
 
 def test_upstream_settings_env(monkeypatch):
@@ -45,10 +48,12 @@ def test_upstream_settings_env(monkeypatch):
     monkeypatch.setenv("LLM_UPSTREAM_MAX_RETRIES", "4")
     monkeypatch.setenv("LLM_UPSTREAM_EWMA_ALPHA", "0.7")
     monkeypatch.setenv("LLM_UPSTREAM_PROBE_FRACTION", "0.2")
+    monkeypatch.setenv("LLM_UPSTREAM_FINAL_TIMEOUT_S", "1.5")
     assert upstream_timeout_s() == 0.1
     assert upstream_max_retries() == 4
     assert upstream_ewma_alpha() == 0.7
     assert upstream_probe_fraction() == 0.2
+    assert upstream_final_timeout_s() == 1.5
 
 
 def _transport(handler) -> httpx.MockTransport:
@@ -145,6 +150,37 @@ def test_timeout_retries_on_different_upstream():
     assert stats[0].inflight == 0
 
 
+def test_final_attempt_uses_longer_timeout():
+    async def handler(request: httpx.Request) -> httpx.Response:
+        host = _url(request)
+        hits.append(host)
+        if host in ("http://u1:9000", "http://u2:9000"):
+            await asyncio.sleep(0.5)
+        else:
+            await asyncio.sleep(0.1)
+        return httpx.Response(200, json={"completion": "ok"})
+
+    hits: list[str] = []
+    urls = ["http://u1:9000", "http://u2:9000", "http://u3:9000"]
+
+    async def run():
+        pool = UpstreamPool(
+            urls=urls,
+            transport=_transport(handler),
+            timeout_s=0.05,
+            final_timeout_s=1.0,
+            max_retries=2,
+            probe_fraction=0,
+        )
+        try:
+            return await pool.forward({"prompt": "p"})
+        finally:
+            await pool.aclose()
+
+    assert asyncio.run(run()) == (200, {"completion": "ok"})
+    assert hits == urls
+
+
 def test_5xx_retries_on_different_upstream():
     async def handler(request: httpx.Request) -> httpx.Response:
         host = _url(request)
@@ -211,6 +247,7 @@ def test_retries_exhausted_returns_last_error():
             urls=urls,
             transport=_transport(timeout_handler),
             timeout_s=0.01,
+            final_timeout_s=0.01,
             max_retries=2,
             probe_fraction=0,
         )
@@ -302,6 +339,54 @@ def test_probe_fraction_sends_traffic_to_slow_upstream():
 
     asyncio.run(run())
     assert hits == ["http://u3:9000"]
+
+
+def test_retries_do_not_probe():
+    async def handler(request: httpx.Request) -> httpx.Response:
+        host = _url(request)
+        hits.append(host)
+        if host == "http://u2:9000":
+            await asyncio.sleep(0.02)
+        elif host == "http://u3:9000":
+            await asyncio.sleep(0.05)
+        if host == "http://u4:9000":
+            return httpx.Response(500, json={"error": "x"})
+        return httpx.Response(200, json={"completion": "ok"})
+
+    class FakeRng:
+        def random(self):
+            return 0.0
+
+        def choice(self, sequence):
+            return sequence[-1]
+
+    hits: list[str] = []
+    urls = [
+        "http://u1:9000",
+        "http://u2:9000",
+        "http://u3:9000",
+        "http://u4:9000",
+    ]
+
+    async def run():
+        pool = UpstreamPool(
+            urls=urls,
+            transport=_transport(handler),
+            max_retries=1,
+            probe_fraction=0,
+            rng=FakeRng(),
+        )
+        try:
+            for _ in range(4):
+                await pool.forward({"prompt": "warm"})
+            pool._probe_fraction = 1.0
+            hits.clear()
+            return await pool.forward({"prompt": "p"})
+        finally:
+            await pool.aclose()
+
+    assert asyncio.run(run()) == (200, {"completion": "ok"})
+    assert hits == ["http://u4:9000", "http://u1:9000"]
 
 
 def test_inflight_score_spreads_concurrent_load():

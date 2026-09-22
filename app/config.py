@@ -29,7 +29,7 @@ def upstream_urls() -> list[str]:
 
 
 def upstream_timeout_s() -> float:
-    return _env_float("LLM_UPSTREAM_TIMEOUT_S", 0.25)
+    return _env_float("LLM_UPSTREAM_TIMEOUT_S", 0.2)
 
 
 def upstream_max_retries() -> int:
@@ -41,4 +41,8 @@ def upstream_ewma_alpha() -> float:
 
 
 def upstream_probe_fraction() -> float:
-    return _env_float("LLM_UPSTREAM_PROBE_FRACTION", 0.05)
+    return _env_float("LLM_UPSTREAM_PROBE_FRACTION", 0.02)
+
+
+def upstream_final_timeout_s() -> float:
+    return _env_float("LLM_UPSTREAM_FINAL_TIMEOUT_S", 5.0)

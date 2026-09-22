@@ -2,12 +2,13 @@ import asyncio
 import logging
 import random
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import httpx
 
 from .config import (
     upstream_ewma_alpha,
+    upstream_final_timeout_s,
     upstream_max_retries,
     upstream_probe_fraction,
     upstream_timeout_s,
@@ -47,6 +48,7 @@ class UpstreamPool:
         max_retries: int | None = None,
         ewma_alpha: float | None = None,
         probe_fraction: float | None = None,
+        final_timeout_s: float | None = None,
         rng: random.Random | None = None,
     ):
         self._timeout_s = (
@@ -63,6 +65,11 @@ class UpstreamPool:
             if probe_fraction is None
             else probe_fraction
         )
+        self._final_timeout_s = (
+            upstream_final_timeout_s()
+            if final_timeout_s is None
+            else final_timeout_s
+        )
         self._upstreams: list[UpstreamState] = [
             UpstreamState(url) for url in (urls or upstream_urls())
         ]
@@ -77,15 +84,21 @@ class UpstreamPool:
             for u in self._upstreams
         ]
 
-    def _select(self, exclude: set[str]) -> UpstreamState | None:
+    def _select(
+        self, exclude: set[str], allow_probe: bool
+    ) -> UpstreamState | None:
         candidates = [u for u in self._upstreams if u.url not in exclude]
         if not candidates:
             return None
-        cold = [u for u in candidates if u.samples == 0]
-        if cold:
-            return cold[0]
-        if len(candidates) > 1 and self._rng.random() < self._probe_fraction:
-            return self._rng.choice(candidates)
+        if allow_probe:
+            cold = [u for u in candidates if u.samples == 0]
+            if cold:
+                return cold[0]
+            if (
+                len(candidates) > 1
+                and self._rng.random() < self._probe_fraction
+            ):
+                return self._rng.choice(candidates)
         return min(candidates, key=UpstreamState.score)
 
     def _record(self, u: UpstreamState, elapsed_ms: float) -> None:
@@ -101,22 +114,27 @@ class UpstreamPool:
         tried: set[str] = set()
         last: tuple[int, dict] | None = None
         for attempt in range(self._max_retries + 1):
-            u = self._select(tried)
+            u = self._select(tried, allow_probe=attempt == 0)
             if u is None:
                 break
             tried.add(u.url)
             u.inflight += 1
             start = time.perf_counter()
+            deadline = self._timeout_s
+            if attempt == self._max_retries and attempt > 0:
+                deadline = max(self._timeout_s, self._final_timeout_s)
             try:
                 try:
                     resp = await asyncio.wait_for(
                         self._client.post(
-                            f"{u.url}/v1/completions", json=payload
+                            f"{u.url}/v1/completions",
+                            json=payload,
+                            timeout=deadline,
                         ),
-                        timeout=self._timeout_s,
+                        timeout=deadline,
                     )
                 except (httpx.TimeoutException, asyncio.TimeoutError):
-                    self._record(u, self._timeout_s * 1000 * 2)
+                    self._record(u, deadline * 1000 * 2)
                     last = (504, {"error": "upstream timeout"})
                     log.warning(
                         "upstream %s timed out (attempt %d)",
