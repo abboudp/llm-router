@@ -22,9 +22,9 @@ class UpstreamPool:
                  max_hedges: int | None = None, timeout: float = 10.0):
         self._replicas = [_Replica(url) for url in (urls or upstream_urls())]
         if hedge_after is None:
-            hedge_after = float(os.getenv("LLM_HEDGE_AFTER_MS", "250")) / 1000
+            hedge_after = float(os.getenv("LLM_HEDGE_AFTER_MS", "200")) / 1000
         if max_hedges is None:
-            max_hedges = int(os.getenv("LLM_MAX_HEDGES", "1"))
+            max_hedges = int(os.getenv("LLM_MAX_HEDGES", "2"))
         self._hedge_after = hedge_after
         self._max_hedges = max_hedges
         self._timeout = timeout
@@ -77,23 +77,37 @@ class UpstreamPool:
             return 502, {"error": "upstream unavailable"}
 
         pending: set[asyncio.Task[tuple[int, dict]]] = set()
-        next_candidate = 0
+        next_candidate = 1
         hedges_started = 0
         last_failure: tuple[int, dict] | None = None
 
-        def launch() -> None:
-            nonlocal next_candidate
-            replica = candidates[next_candidate]
-            next_candidate += 1
-            pending.add(asyncio.create_task(self._attempt(replica, payload)))
+        def launch(replica: _Replica) -> asyncio.Task[tuple[int, dict]]:
+            task = asyncio.create_task(self._attempt(replica, payload))
+            pending.add(task)
+            return task
 
-        launch()
+        def launch_hedge() -> None:
+            nonlocal next_candidate
+            nominal = next_candidate % len(candidates)
+            next_candidate += 1
+            threshold_ms = 2 * self._hedge_after * 1000
+            eligible = [
+                replica for replica in candidates
+                if replica.ewma_ms is None or replica.ewma_ms <= threshold_ms
+            ]
+            if eligible:
+                for offset in range(len(candidates)):
+                    replica = candidates[(nominal + offset) % len(candidates)]
+                    if replica in eligible:
+                        break
+            else:
+                replica = candidates[nominal]
+            launch(replica)
+
+        primary_task = launch(candidates[0])
         next_hedge_at = time.monotonic() + self._hedge_after
         try:
-            while pending or (
-                hedges_started < self._max_hedges
-                and next_candidate < len(candidates)
-            ):
+            while pending or hedges_started < self._max_hedges:
                 if pending:
                     timeout = max(0, next_hedge_at - time.monotonic())
                     done, pending = await asyncio.wait(
@@ -101,10 +115,12 @@ class UpstreamPool:
                         timeout=timeout,
                         return_when=asyncio.FIRST_COMPLETED,
                     )
+                    primary_failed = False
                     for task in done:
                         try:
                             status, body = task.result()
                         except Exception:
+                            primary_failed |= task is primary_task
                             continue
                         if 200 <= status < 300:
                             for loser in pending:
@@ -114,19 +130,18 @@ class UpstreamPool:
                                     *pending, return_exceptions=True
                                 )
                             return status, body
+                        primary_failed |= task is primary_task
                         last_failure = (status, body)
+                    if primary_failed and hedges_started < self._max_hedges:
+                        next_hedge_at = time.monotonic()
                 if (
                     time.monotonic() >= next_hedge_at
                     and hedges_started < self._max_hedges
-                    and next_candidate < len(candidates)
                 ):
-                    launch()
+                    launch_hedge()
                     hedges_started += 1
                     next_hedge_at = time.monotonic() + self._hedge_after
-                elif not pending and (
-                    hedges_started < self._max_hedges
-                    and next_candidate < len(candidates)
-                ):
+                elif not pending and hedges_started < self._max_hedges:
                     await asyncio.sleep(
                         max(0, next_hedge_at - time.monotonic())
                     )
