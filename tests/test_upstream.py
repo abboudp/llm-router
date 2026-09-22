@@ -143,9 +143,28 @@ def test_prefers_lower_ewma_after_warmup():
 
     first, later_hits, candidates = asyncio.run(run())
     assert first == (200, {"completion": "u2"})
-    assert all(per_forward[0] == "u2" for per_forward in later_hits)
     assert all(per_forward == ["u2"] for per_forward in later_hits)
-    assert candidates == ["http://u2:9000", "http://u2:9000"]
+    assert candidates[0] == "http://u2:9000"
+
+
+def test_slow_upstream_excluded_from_hedges():
+    async def run():
+        pool = UpstreamPool(
+            urls=["http://u1:9000", "http://u2:9000"],
+            transport=httpx.MockTransport(lambda r: httpx.Response(200, json={})),
+            hedge_delay_s=0.05,
+            max_hedges=2,
+            probe_fraction=0.0,
+            slow_factor=2.0,
+        )
+        try:
+            pool._upstreams[0].ewma_ms, pool._upstreams[0].samples = 300.0, 1
+            pool._upstreams[1].ewma_ms, pool._upstreams[1].samples = 20.0, 1
+            return [u.url for u in pool._candidates()]
+        finally:
+            await pool.aclose()
+
+    assert asyncio.run(run()) == ["http://u2:9000"] * 3
 
 
 def test_cold_upstream_with_stalled_pending_not_preferred():
