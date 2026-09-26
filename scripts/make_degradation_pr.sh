@@ -2,11 +2,11 @@
 # Perf-gate automation test: opens a PR that intentionally regresses request
 # latency, to verify the gate catches the regression and attributes the cause.
 set -euo pipefail
-GH_USER=$(gh api user -q .login)
+REPO_OWNER="${REPO_OWNER:-abboudp}"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
-git clone -q "git@github.com:$GH_USER/llm-router.git" "$WORK/r" || { rm -rf "$WORK/r"; git clone -q "https://github.com/$GH_USER/llm-router.git" "$WORK/r"; }
+git clone -q "git@github.com:$REPO_OWNER/llm-router.git" "$WORK/r" || { rm -rf "$WORK/r"; git clone -q "https://github.com/$REPO_OWNER/llm-router.git" "$WORK/r"; }
 cd "$WORK/r"
 git checkout -b audit/request-logging
 
@@ -74,6 +74,6 @@ AUDIT_REG
 git add app/audit.py app/main.py
 git commit -m "Add request audit logging for compliance"
 git push -u origin audit/request-logging
-gh pr create --repo "$GH_USER/llm-router" \
+gh pr create --repo "$REPO_OWNER/llm-router" \
   --title "Add request audit logging for compliance" \
   --body "Security asked us to keep a tamper-evident audit trail of gateway requests ahead of the SOC 2 audit. Adds a lightweight middleware that scrubs PII and appends an integrity-chained record per request."
