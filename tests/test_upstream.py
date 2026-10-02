@@ -261,3 +261,112 @@ def test_rotation_unchanged_when_all_healthy():
     _forward_n(pool, 6)
 
     assert hits == URLS * 2
+
+
+def _gated_transport(hits: list[str], gates: dict[str, asyncio.Event]) -> httpx.MockTransport:
+    """Requests to a URL with a gate block until the gate is set."""
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        host = _host(request)
+        hits.append(host)
+        gate = gates.get(host)
+        if gate is not None:
+            await gate.wait()
+        return httpx.Response(200, json={"completion": f"from {host}"})
+
+    return httpx.MockTransport(handler)
+
+
+def test_least_connections_routes_around_busy_backend():
+    async def run():
+        hits: list[str] = []
+        gate = asyncio.Event()
+        pool = UpstreamPool(urls=["http://a:9000", "http://b:9000"],
+                            transport=_gated_transport(hits, {"http://a:9000": gate}))
+        blocked = asyncio.create_task(pool.forward({"prompt": "slow"}))
+        await asyncio.sleep(0)
+        while pool.in_flight()["http://a:9000"] == 0:
+            await asyncio.sleep(0)
+
+        second = await pool.forward({"prompt": "p"})
+        third = await pool.forward({"prompt": "p"})
+        busy_counts = pool.in_flight()
+
+        gate.set()
+        first = await blocked
+        await pool.aclose()
+        return hits, first, second, third, busy_counts, pool.in_flight()
+
+    hits, first, second, third, busy_counts, final_counts = asyncio.run(run())
+    assert hits == ["http://a:9000", "http://b:9000", "http://b:9000"]
+    assert second == third == (200, {"completion": "from http://b:9000"})
+    assert first == (200, {"completion": "from http://a:9000"})
+    assert busy_counts == {"http://a:9000": 1, "http://b:9000": 0}
+    assert final_counts == {"http://a:9000": 0, "http://b:9000": 0}
+
+
+def test_least_connections_parallel_burst_spreads_across_all_urls():
+    async def run():
+        hits: list[str] = []
+        gate = asyncio.Event()
+        pool = UpstreamPool(urls=URLS, transport=_gated_transport(hits, {u: gate for u in URLS}))
+        tasks = [asyncio.create_task(pool.forward({"prompt": "p"})) for _ in range(9)]
+        while sum(pool.in_flight().values()) < 9:
+            await asyncio.sleep(0)
+        peak = pool.in_flight()
+        gate.set()
+        results = await asyncio.gather(*tasks)
+        await pool.aclose()
+        return hits, peak, results, pool.in_flight()
+
+    hits, peak, results, final_counts = asyncio.run(run())
+    assert peak == {u: 3 for u in URLS}
+    assert sorted(hits) == sorted(URLS * 3)
+    assert all(status == 200 for status, _ in results)
+    assert final_counts == {u: 0 for u in URLS}
+
+
+def test_least_connections_counters_balanced_after_failures():
+    hits: list[str] = []
+    pool = UpstreamPool(urls=URLS, transport=_failing_transport(hits, {"http://u1:9000"}))
+
+    async def run():
+        results = await asyncio.gather(*(pool.forward({"prompt": "p"}) for _ in range(6)))
+        counts = pool.in_flight()
+        await pool.aclose()
+        return results, counts
+
+    results, counts = asyncio.run(run())
+    assert all(status == 200 for status, _ in results)
+    assert counts == {u: 0 for u in URLS}
+
+    all_fail = UpstreamPool(urls=URLS, transport=_failing_transport([], set(URLS)))
+
+    async def run_all_fail():
+        result = await all_fail.forward({"prompt": "p"})
+        counts = all_fail.in_flight()
+        await all_fail.aclose()
+        return result, counts
+
+    (status, _), counts = asyncio.run(run_all_fail())
+    assert status == 502
+    assert counts == {u: 0 for u in URLS}
+
+
+def test_least_connections_tie_break_is_deterministic():
+    def sequence() -> list[str]:
+        hits: list[str] = []
+        pool = UpstreamPool(urls=URLS, transport=_recording_transport(hits))
+
+        async def run():
+            await asyncio.gather(*(pool.forward({"prompt": "p"}) for _ in range(5)))
+            for _ in range(4):
+                await pool.forward({"prompt": "p"})
+            await pool.aclose()
+
+        asyncio.run(run())
+        return hits
+
+    first = sequence()
+    assert first == sequence()
+    assert first[:3] == URLS
