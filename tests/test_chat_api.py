@@ -91,3 +91,24 @@ def test_chat_upstream_error_passthrough_and_no_persist():
     c.__exit__(None, None, None)
     assert resp.status_code == 503
     assert msgs == []  # failed exchanges are not persisted
+
+
+def test_chat_upstream_timeout_surfaces_as_504_with_detail():
+    import httpx
+
+    from app.upstream import UpstreamPool
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("stalled", request=request)
+
+    pool = UpstreamPool(urls=["http://u1:9000"], transport=httpx.MockTransport(handler),
+                        timeout_s=0.05)
+    c = chat_client(pool)
+    cid = c.post("/v1/conversations", json={}).json()["id"]
+    resp = c.post("/v1/chat", json={"conversation_id": cid, "message": "hi"})
+    msgs = c.get(f"/v1/conversations/{cid}/messages").json()
+    c.__exit__(None, None, None)
+
+    assert resp.status_code == 504
+    assert resp.json()["detail"]["error"] == "upstream_timeout"
+    assert msgs == []
