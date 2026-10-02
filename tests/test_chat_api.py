@@ -91,3 +91,46 @@ def test_chat_upstream_error_passthrough_and_no_persist():
     c.__exit__(None, None, None)
     assert resp.status_code == 503
     assert msgs == []  # failed exchanges are not persisted
+
+
+def test_chat_caps_history_sent_upstream_but_stores_everything():
+    from app.routes.chat import HISTORY_LIMIT
+
+    pool = FakePool()
+    c = chat_client(pool)
+    cid = c.post("/v1/conversations", json={}).json()["id"]
+    store = main.app.state.store
+    total = HISTORY_LIMIT + 10
+    for i in range(total):
+        store.add_message(cid, "user" if i % 2 == 0 else "assistant", f"msg-{i:03d}")
+
+    resp = c.post("/v1/chat", json={"conversation_id": cid, "message": "latest"})
+    msgs = c.get(f"/v1/conversations/{cid}/messages").json()
+    c.__exit__(None, None, None)
+
+    assert resp.status_code == 200
+    prompt = pool.calls[0]["prompt"]
+    for i in range(total - HISTORY_LIMIT):
+        assert f"msg-{i:03d}" not in prompt
+    for i in range(total - HISTORY_LIMIT, total):
+        assert f"msg-{i:03d}" in prompt
+    assert prompt.endswith("User: latest\nAssistant:")
+
+    # every message is still persisted: seeded history + this exchange
+    assert len(msgs) == total + 2
+    assert [m["content"] for m in msgs[:total]] == [f"msg-{i:03d}" for i in range(total)]
+
+
+def test_chat_long_conversation_does_not_retitle():
+    pool = FakePool()
+    c = chat_client(pool)
+    cid = c.post("/v1/conversations", json={}).json()["id"]
+    c.post("/v1/chat", json={"conversation_id": cid, "message": "original topic"})
+    store = main.app.state.store
+    for i in range(60):
+        store.add_message(cid, "user" if i % 2 == 0 else "assistant", f"m{i}")
+    c.post("/v1/chat", json={"conversation_id": cid, "message": "later question"})
+    title = [x for x in c.get("/v1/conversations").json() if x["id"] == cid][0]["title"]
+    c.__exit__(None, None, None)
+
+    assert title == "original topic"

@@ -8,6 +8,7 @@ from ..schemas import ChatRequest, ChatTurnResponse
 router = APIRouter(tags=["chat"])
 
 _AUTO_TITLE_LIMIT = 48
+HISTORY_LIMIT = 50
 
 
 @router.post("/v1/chat", response_model=ChatTurnResponse)
@@ -17,7 +18,7 @@ async def chat(body: ChatRequest, request: Request):
     if conversation is None:
         raise HTTPException(status_code=404, detail="conversation not found")
 
-    history = store.list_messages(body.conversation_id)
+    history = store.list_messages(body.conversation_id, limit=HISTORY_LIMIT)
     prompt = flatten_history(history, body.message)
 
     start = time.monotonic()
