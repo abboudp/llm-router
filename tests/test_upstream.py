@@ -151,3 +151,113 @@ def test_non_2xx_upstream_response_passes_through_unchanged():
         return result
 
     assert asyncio.run(run()) == (503, {"detail": "model overloaded"})
+
+
+def _host(request: httpx.Request) -> str:
+    return f"{request.url.scheme}://{request.url.host}:{request.url.port}"
+
+
+def _failing_transport(hits: list[str], failing: set[str],
+                       exc_type: type[httpx.TransportError] = httpx.ConnectError
+                       ) -> httpx.MockTransport:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        host = _host(request)
+        hits.append(host)
+        if host in failing:
+            raise exc_type("boom", request=request)
+        return httpx.Response(200, json={"completion": f"from {host}"})
+
+    return httpx.MockTransport(handler)
+
+
+def _forward_n(pool: UpstreamPool, n: int) -> list[tuple[int, dict]]:
+    async def run():
+        results = [await pool.forward({"prompt": "p"}) for _ in range(n)]
+        await pool.aclose()
+        return results
+
+    return asyncio.run(run())
+
+
+URLS = ["http://u1:9000", "http://u2:9000", "http://u3:9000"]
+
+
+def test_failover_connect_error_to_next_backend():
+    hits: list[str] = []
+    pool = UpstreamPool(urls=URLS, transport=_failing_transport(hits, {"http://u1:9000"}))
+
+    [(status, body)] = _forward_n(pool, 1)
+
+    assert status == 200
+    assert body == {"completion": "from http://u2:9000"}
+    assert hits == ["http://u1:9000", "http://u2:9000"]
+
+
+def test_failover_timeout_to_next_backend():
+    hits: list[str] = []
+    pool = UpstreamPool(urls=URLS,
+                        transport=_failing_transport(hits, {"http://u1:9000"}, httpx.ReadTimeout))
+
+    [(status, body)] = _forward_n(pool, 1)
+
+    assert status == 200
+    assert body == {"completion": "from http://u2:9000"}
+
+
+def test_failover_all_backends_fail_bounded_by_url_count():
+    hits: list[str] = []
+    pool = UpstreamPool(urls=URLS, transport=_failing_transport(hits, set(URLS)))
+
+    [(status, body)] = _forward_n(pool, 1)
+
+    assert status == 502
+    assert hits == URLS  # each backend tried exactly once
+    assert body["detail"]["error"] == "upstream_unreachable"
+    assert [a["upstream"] for a in body["detail"]["attempts"]] == URLS
+
+
+def test_failover_all_fail_with_last_timeout_is_504():
+    hits: list[str] = []
+    pool = UpstreamPool(urls=URLS,
+                        transport=_failing_transport(hits, set(URLS), httpx.ReadTimeout))
+
+    [(status, body)] = _forward_n(pool, 1)
+
+    assert status == 504
+    assert body["detail"]["error"] == "upstream_timeout"
+    assert len(body["detail"]["attempts"]) == 3
+
+
+def test_failover_does_not_retry_non_2xx():
+    hits: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        hits.append(_host(request))
+        return httpx.Response(503, json={"detail": "model overloaded"})
+
+    pool = UpstreamPool(urls=URLS, transport=httpx.MockTransport(handler))
+
+    [(status, body)] = _forward_n(pool, 1)
+
+    assert (status, body) == (503, {"detail": "model overloaded"})
+    assert hits == ["http://u1:9000"]
+
+
+def test_rotation_continues_after_failover():
+    hits: list[str] = []
+    pool = UpstreamPool(urls=URLS, transport=_failing_transport(hits, {"http://u2:9000"}))
+
+    results = _forward_n(pool, 3)
+
+    assert all(status == 200 for status, _ in results)
+    # u1 | u2 fails -> u3 | u1  (the next request starts after the backend that served)
+    assert hits == ["http://u1:9000", "http://u2:9000", "http://u3:9000", "http://u1:9000"]
+
+
+def test_rotation_unchanged_when_all_healthy():
+    hits: list[str] = []
+    pool = UpstreamPool(urls=URLS, transport=_failing_transport(hits, set()))
+
+    _forward_n(pool, 6)
+
+    assert hits == URLS * 2
