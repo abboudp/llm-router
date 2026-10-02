@@ -53,3 +53,19 @@ def router_hedge_delay_ms() -> float:
 def router_max_attempts() -> int:
     """Upper bound on upstream attempts per request (primary + retries/hedges)."""
     return int(_env_number("ROUTER_MAX_ATTEMPTS", 2))
+
+
+def lb_enabled() -> bool:
+    return _env_flag("ROUTER_LB_ENABLED")
+
+
+def lb_ewma_alpha() -> float:
+    return _env_number("ROUTER_LB_EWMA_ALPHA", 0.3)
+
+
+def lb_failure_threshold() -> int:
+    return int(_env_number("ROUTER_LB_FAILURE_THRESHOLD", 3))
+
+
+def lb_cooldown_ms() -> float:
+    return _env_number("ROUTER_LB_COOLDOWN_MS", 5000)
