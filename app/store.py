@@ -26,7 +26,7 @@ CREATE INDEX IF NOT EXISTS idx_messages_conversation
 
 
 def _row_to_dict(row: sqlite3.Row, drop: tuple[str, ...] = ()) -> dict:
-    return {k: row[k] for k in row.keys() if k not in drop}
+    return {k: value for k, value in dict(row).items() if k not in drop}
 
 
 def _conversation_dict(row: sqlite3.Row) -> dict:

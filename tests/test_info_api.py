@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
 from app import main
-from app.routes.info import AVAILABLE_MODELS, APP_NAME, APP_VERSION
+from app.routes.info import APP_NAME, APP_VERSION, AVAILABLE_MODELS
 
 
 def client():
