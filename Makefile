@@ -5,6 +5,7 @@ services:
 
 lint:
 	uv run ruff check .
+	cd frontend && npm run lint
 
 dev:
 	uv run uvicorn app.main:app --port 8000
