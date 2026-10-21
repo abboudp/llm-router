@@ -1,7 +1,10 @@
-.PHONY: services dev bench ui e2e
+.PHONY: services dev bench ui e2e lint
 
 services:
 	docker compose up -d
+
+lint:
+	uv run ruff check .
 
 dev:
 	uv run uvicorn app.main:app --port 8000

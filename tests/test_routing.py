@@ -39,7 +39,9 @@ def test_openapi_documents_the_search_and_pagination_query_params():
 
     message_params = {
         p["name"]: p
-        for p in schema["paths"]["/v1/conversations/{conversation_id}/messages"]["get"]["parameters"]
+        for p in schema["paths"]["/v1/conversations/{conversation_id}/messages"]["get"][
+            "parameters"
+        ]
     }
     assert "cap" in message_params["limit"]["description"].lower()
     assert "cursor" in message_params["before"]["description"].lower()

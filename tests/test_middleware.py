@@ -26,6 +26,6 @@ def test_request_id_header_and_log(caplog):
 
 
 def test_store_initialized_on_state():
-    with TestClient(main.app) as client:
+    with TestClient(main.app):
         conversation = main.app.state.store.create_conversation()
         assert conversation["id"]
