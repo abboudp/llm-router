@@ -12,10 +12,18 @@ def _registered_paths() -> set[str]:
     return set(main.app.openapi()["paths"].keys())
 
 
-def test_generate_and_chat_routes_are_registered():
+def test_generate_route_is_registered_and_legacy_chat_route_is_gone():
     paths = _registered_paths()
     assert "/v1/generate" in paths
-    assert "/v1/chat" in paths
+    assert "/v1/chat" not in paths
+
+
+def test_generate_route_documents_chat_turn_contract():
+    op = main.app.openapi()["paths"]["/v1/generate"]["post"]
+    request_ref = op["requestBody"]["content"]["application/json"]["schema"]["$ref"]
+    response_ref = op["responses"]["200"]["content"]["application/json"]["schema"]["$ref"]
+    assert request_ref.endswith("/ChatRequest")
+    assert response_ref.endswith("/ChatTurnResponse")
 
 
 def test_info_route_is_registered():

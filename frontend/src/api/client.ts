@@ -47,5 +47,5 @@ export const api = {
       }),
     ),
   sendChat: (params: { conversation_id: string; message: string }) =>
-    request<ChatResponse>("/v1/chat", { method: "POST", body: JSON.stringify(params) }),
+    request<ChatResponse>("/v1/generate", { method: "POST", body: JSON.stringify(params) }),
 };

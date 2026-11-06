@@ -18,7 +18,7 @@ export interface Message {
   content: string;
   latency_ms: number | null;
   created_at: number;
-  // Only ever set client-side, on the message just returned by /v1/chat —
+  // Only ever set client-side, on the message just returned by /v1/generate —
   // the backend doesn't persist usage per message, so it's unavailable
   // again once a conversation is reloaded from history.
   usage?: Usage | null;

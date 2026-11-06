@@ -33,8 +33,7 @@ make e2e     # run the Playwright end-to-end UI tests
 
 | Method | Path                                       | Description                              |
 |--------|---------------------------------------------|-------------------------------------------|
-| POST   | `/v1/generate`                               | Forward a single prompt to the backend fleet |
-| POST   | `/v1/chat`                                   | Send a message to a conversation and get a reply |
+| POST   | `/v1/generate`                               | Send a message to a conversation and get a reply |
 | GET    | `/v1/info`                                   | App name, version, and available models |
 | GET    | `/v1/conversations?q=`                       | List conversations, optionally filtered by title |
 | POST   | `/v1/conversations`                          | Create a conversation |
@@ -45,7 +44,7 @@ make e2e     # run the Playwright end-to-end UI tests
 
 ## Layout
 
-- `app/` — FastAPI gateway: generate/chat/info routes, conversation store, markdown export, request logging middleware
+- `app/` — FastAPI gateway: chat/info routes, conversation store, markdown export, request logging middleware
 - `bench/` — k6 load test script and weighted workload
 - `docker-compose.yml` — backend fleet service definitions
 - `frontend/` — React + TypeScript playground UI (Vite, Vitest, Testing Library, Playwright)

@@ -1,6 +1,7 @@
 import http from "k6/http";
 import { check } from "k6";
 import { SharedArray } from "k6/data";
+import { Trend } from "k6/metrics";
 
 const workload = new SharedArray("workload", () =>
   JSON.parse(open("./workload.json"))
@@ -24,8 +25,11 @@ export const options = {
   summaryTrendStats: ["avg", "p(50)", "p(95)", "p(99)", "max"],
 };
 
-// per-VU: same prompt must always yield the same signature
-const seenSignatures = {};
+// Only the /v1/generate call is reported; conversation setup is excluded.
+const generateDuration = new Trend("generate_duration", true);
+
+const BASE_URL = "http://localhost:8000";
+const JSON_HEADERS = { headers: { "Content-Type": "application/json" } };
 
 function pickPrompt() {
   let r = Math.random() * totalWeight;
@@ -40,33 +44,38 @@ export default function () {
   const item = pickPrompt();
   // tail prompts carry a unique request context to mimic real traffic variety
   const prompt = item.weight <= 3 ? `${item.prompt} [ctx ${__VU}-${__ITER}]` : item.prompt;
+
+  // A fresh conversation per iteration keeps the flattened upstream prompt
+  // free of prior history, so request size doesn't grow over the run.
+  const convo = http.post(`${BASE_URL}/v1/conversations`, "{}", {
+    ...JSON_HEADERS,
+    tags: { name: "create_conversation" },
+  });
+  const conversationId = convo.status === 201 ? convo.json("id") : null;
+
   const res = http.post(
-    "http://localhost:8000/v1/generate",
-    JSON.stringify({ prompt: prompt, max_tokens: 64 }),
-    { headers: { "Content-Type": "application/json" } }
+    `${BASE_URL}/v1/generate`,
+    JSON.stringify({ conversation_id: conversationId, message: prompt, max_tokens: 64 }),
+    { ...JSON_HEADERS, tags: { name: "generate" } }
   );
+  generateDuration.add(res.timings.duration);
   let body = {};
   try {
     body = res.json();
   } catch (e) {
     body = {};
   }
-  const sig = (body && body.signature) || "";
-  const firstSeen = !(prompt in seenSignatures);
-  const stable = firstSeen || seenSignatures[prompt] === sig;
-  if (firstSeen) seenSignatures[prompt] = sig;
+  const content = body && body.message ? body.message.content : undefined;
 
   check(res, {
     "status 200": (r) => r.status === 200,
-    "completion non-empty": () =>
-      typeof body.completion === "string" && body.completion.length > 0,
-    "signature well-formed": () => /^[0-9a-f]{64}$/.test(sig),
-    "signature stable for prompt": () => stable,
+    "assistant message non-empty": () => typeof content === "string" && content.length > 0,
+    "latency_ms reported": () => Number.isInteger(body.latency_ms),
   });
 }
 
 export function handleSummary(data) {
-  const t = data.metrics.http_req_duration.values;
+  const t = data.metrics.generate_duration.values;
   const err = data.metrics.http_req_failed.values.rate;
   const chk = data.metrics.checks ? data.metrics.checks.values.rate : 1;
   const fmt = (label, value) => `  ${label.padEnd(12)} ${value}\n`;

@@ -10,7 +10,7 @@ router = APIRouter(tags=["chat"])
 _AUTO_TITLE_LIMIT = 48
 
 
-@router.post("/v1/chat", response_model=ChatTurnResponse)
+@router.post("/v1/generate", response_model=ChatTurnResponse)
 async def chat(body: ChatRequest, request: Request):
     store = request.app.state.store
     conversation = store.get_conversation(body.conversation_id)
