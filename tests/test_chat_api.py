@@ -32,7 +32,7 @@ def test_chat_roundtrip_persists_and_titles():
     c = chat_client(pool)
     cid = c.post("/v1/conversations", json={}).json()["id"]
 
-    resp = c.post("/v1/chat", json={"conversation_id": cid, "message": "What is a hash map?"})
+    resp = c.post("/v1/generate", json={"conversation_id": cid, "message": "What is a hash map?"})
     body = resp.json()
     c.__exit__(None, None, None)
 
@@ -52,8 +52,8 @@ def test_chat_persists_both_turns_and_uses_history():
     pool = FakePool()
     c = chat_client(pool)
     cid = c.post("/v1/conversations", json={}).json()["id"]
-    c.post("/v1/chat", json={"conversation_id": cid, "message": "first"})
-    c.post("/v1/chat", json={"conversation_id": cid, "message": "second"})
+    c.post("/v1/generate", json={"conversation_id": cid, "message": "first"})
+    c.post("/v1/generate", json={"conversation_id": cid, "message": "second"})
     msgs = c.get(f"/v1/conversations/{cid}/messages").json()
     convo_title = [x for x in c.get("/v1/conversations").json() if x["id"] == cid][0]["title"]
     c.__exit__(None, None, None)
@@ -69,7 +69,7 @@ def test_chat_forwards_non_default_max_tokens_to_pool():
     c = chat_client(pool)
     cid = c.post("/v1/conversations", json={}).json()["id"]
 
-    c.post("/v1/chat", json={"conversation_id": cid, "message": "hi", "max_tokens": 16})
+    c.post("/v1/generate", json={"conversation_id": cid, "message": "hi", "max_tokens": 16})
     c.__exit__(None, None, None)
 
     assert pool.calls[0]["max_tokens"] == 16
@@ -77,7 +77,7 @@ def test_chat_forwards_non_default_max_tokens_to_pool():
 
 def test_chat_unknown_conversation_404():
     c = chat_client(FakePool())
-    resp = c.post("/v1/chat", json={"conversation_id": "nope", "message": "hi"})
+    resp = c.post("/v1/generate", json={"conversation_id": "nope", "message": "hi"})
     c.__exit__(None, None, None)
     assert resp.status_code == 404
 
@@ -86,7 +86,7 @@ def test_chat_upstream_error_passthrough_and_no_persist():
     pool = FakePool(status=503)
     c = chat_client(pool)
     cid = c.post("/v1/conversations", json={}).json()["id"]
-    resp = c.post("/v1/chat", json={"conversation_id": cid, "message": "hi"})
+    resp = c.post("/v1/generate", json={"conversation_id": cid, "message": "hi"})
     msgs = c.get(f"/v1/conversations/{cid}/messages").json()
     c.__exit__(None, None, None)
     assert resp.status_code == 503

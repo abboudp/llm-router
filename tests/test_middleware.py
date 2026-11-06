@@ -16,8 +16,9 @@ class FakePool:
 def test_request_id_header_and_log(caplog):
     with TestClient(main.app) as client:
         main.app.state.pool = FakePool()
+        cid = client.post("/v1/conversations", json={}).json()["id"]
         with caplog.at_level("INFO", logger="llm-router.requests"):
-            resp = client.post("/v1/generate", json={"prompt": "hi"})
+            resp = client.post("/v1/generate", json={"conversation_id": cid, "message": "hi"})
     assert re.fullmatch(r"[0-9a-f]{12}", resp.headers["x-request-id"])
     line = "".join(caplog.messages)
     assert "path=/v1/generate" in line
